@@ -1,4 +1,4 @@
-# mindaprice-test
+# MindaPriceZW Test Application
 The complete source code for the MindaPriceZW test mobile application. This source repo has the original source code for the Alpha android build and the unfinished Alpha build
 ***********************************************************************************************************************************************************************
 The project is still in development, but is fully functioning with backend database and messenging capabilities
