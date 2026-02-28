@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "995020752129",
+    "project_id": "mindaprice-zw",
+    "storage_bucket": "mindaprice-zw.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:995020752129:android:a937377f33ce1d1530c700",
+        "android_client_info": {
+          "package_name": "com.example.mindaprice_test"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1jPZEiE68xRi-sweDJqNpRBRLB5bGiN8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

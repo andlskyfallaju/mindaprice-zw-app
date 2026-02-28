@@ -1,0 +1,31 @@
+name: mindaprice_test
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^2.25.4
+  firebase_auth: ^4.17.4
+  cloud_firestore: ^4.15.8
+  geolocator: ^12.0.0
+  geocoding: ^2.2.0
+  google_fonts: ^6.0.0
+  intl: ^0.18.1
+  http: ^1.2.2
+  firebase_messaging: ^14.7.2
+  flutter_local_notifications: ^17.2.2
+  cloud_functions: ^4.6.0
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
