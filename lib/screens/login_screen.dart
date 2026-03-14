@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../services/recent_accounts_service.dart';
+import 'recent_account_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -19,6 +22,21 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  List<Map<String, dynamic>> recentAccounts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    loadRecentAccounts();
+  }
+
+  Future<void> loadRecentAccounts() async {
+    final accounts = await RecentAccountsService.getAccounts();
+    setState(() {
+      recentAccounts = accounts;
+    });
+  }
+
   String getFirebaseAuthError(FirebaseAuthException e) {
     switch (e.code) {
       case 'invalid-email':
@@ -36,7 +54,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void login() async {
+  Future<void> login() async {
     setState(() => _isLoading = true);
 
     try {
@@ -46,73 +64,326 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final user = userCred.user!;
+      await user.reload();
+
       if (!user.emailVerified) {
         await user.sendEmailVerification();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Email not verified! Verification link has been sent. Check your inbox.')));
         await _auth.signOut();
-        setState(() => _isLoading = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Email not verified. A new verification link has been sent.',
+            ),
+          ),
+        );
         return;
       }
 
-      // Navigate to home
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      final username = (doc.data()?['username'] ?? '').toString();
+      final photoUrl = (doc.data()?['photoUrl'] ?? '').toString();
+
+      await RecentAccountsService.saveAccount(
+        uid: user.uid,
+        email: _emailController.text.trim(),
+        username: username,
+        photoUrl: photoUrl,
+      );
+
+      await loadRecentAccounts();
+
+      if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(getFirebaseAuthError(e))));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(getFirebaseAuthError(e))),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Login failed: $e')));
-      debugPrint('Login error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Login failed: $e')),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  Future<void> removeRecentAccount(String email) async {
+    await RecentAccountsService.removeAccount(email);
+    await loadRecentAccounts();
+  }
+
+  Widget buildRecentAvatar(String username, String photoUrl) {
+    if (photoUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: 26,
+        backgroundImage: NetworkImage(photoUrl),
+      );
+    }
+
+    return CircleAvatar(
+      radius: 26,
+      backgroundColor: Colors.green[200],
+      child: Text(
+        username.isNotEmpty ? username[0].toUpperCase() : "?",
+        style: GoogleFonts.montserrat(
+          fontWeight: FontWeight.bold,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  Widget buildRecentAccountCard(Map<String, dynamic> account) {
+    final username = (account['username'] ?? '').toString();
+    final email = (account['email'] ?? '').toString();
+    final photoUrl = (account['photoUrl'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.white,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => RecentAccountPasswordScreen(
+                  email: email,
+                  username: username,
+                  photoUrl: photoUrl,
+                ),
+              ),
+            ).then((_) {
+              loadRecentAccounts();
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                buildRecentAvatar(username, photoUrl),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        username,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        email,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => removeRecentAccount(email),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildRecentAccountsSection() {
+    if (recentAccounts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Choose an account",
+            style: GoogleFonts.montserrat(
+              fontSize: 21,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "Continue with a recently used account.",
+            style: GoogleFonts.montserrat(
+              fontSize: 13,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...recentAccounts.map(buildRecentAccountCard),
+        ],
+      ),
+    );
+  }
+
+  Widget buildDividerLabel() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Expanded(child: Divider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              "Use another account",
+              style: GoogleFonts.montserrat(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
+              ),
+            ),
+          ),
+          const Expanded(child: Divider()),
+        ],
+      ),
+    );
+  }
+
+  Widget buildManualLoginSection() {
+    return Column(
+      children: [
+        TextField(
+          controller: _emailController,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(
+            labelText: 'Email',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+        ),
+        const SizedBox(height: 15),
+        TextField(
+          controller: _passwordController,
+          obscureText: _obscurePassword,
+          decoration: InputDecoration(
+            labelText: 'Password',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword
+                    ? Icons.visibility
+                    : Icons.visibility_off,
+              ),
+              onPressed: () {
+                setState(() {
+                  _obscurePassword = !_obscurePassword;
+                });
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        _isLoading
+            ? const CircularProgressIndicator()
+            : SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: login,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  child: const Text('Login'),
+                ),
+              ),
+      ],
+    );
+  }
+
+  Widget buildHeader() {
+    return Column(
+      children: [
+        CircleAvatar(
+          radius: 34,
+          backgroundColor: Colors.green[200],
+          child: const Icon(
+            Icons.person_outline_rounded,
+            size: 34,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Welcome back',
+          style: GoogleFonts.montserrat(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Sign in to continue using MindaPrice ZW',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.montserrat(
+            fontSize: 13,
+            color: Colors.black54,
+            height: 1.4,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final hasRecentAccounts = recentAccounts.isNotEmpty;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
+      appBar: AppBar(
+        title: Text(
+          'Login',
+          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Email
-            TextField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email'),
-            ),
-            const SizedBox(height: 15),
-
-            // Password
-            TextField(
-              controller: _passwordController,
-              obscureText: _obscurePassword,
-              decoration: InputDecoration(
-                labelText: 'Password',
-                suffixIcon: IconButton(
-                  icon: Icon(
-                      _obscurePassword ? Icons.visibility : Icons.visibility_off),
-                  onPressed: () {
-                    setState(() => _obscurePassword = !_obscurePassword);
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: 30),
-
-            // Login Button
-            _isLoading
-                ? const CircularProgressIndicator()
-                : ElevatedButton(onPressed: login, child: const Text('Login')),
-
+            buildHeader(),
+            const SizedBox(height: 28),
+            buildRecentAccountsSection(),
+            if (hasRecentAccounts) buildDividerLabel(),
+            if (hasRecentAccounts) const SizedBox(height: 12),
+            buildManualLoginSection(),
             const SizedBox(height: 20),
-
-            // Navigate to Sign Up
             TextButton(
-              onPressed: () => Navigator.pushReplacementNamed(context, '/signup'),
+              onPressed: () =>
+                  Navigator.pushReplacementNamed(context, '/signup'),
               child: const Text('Don’t have an account? Sign Up'),
             ),
           ],

@@ -4,18 +4,29 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  static Future<void> init() async {
+  static Future<void> init({
+    void Function(String? payload)? onNotificationTap,
+  }) async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidInit);
 
-    await _notificationsPlugin.initialize(initSettings);
+    const initSettings = InitializationSettings(
+      android: androidInit,
+    );
 
-    // 🔔 Create HIGH importance notification channel (WhatsApp-style popups)
+    await _notificationsPlugin.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        if (onNotificationTap != null) {
+          onNotificationTap(response.payload);
+        }
+      },
+    );
+
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'advisory_channel',
       'Advisory Notifications',
-      description: 'Notifications for farming advisory alerts',
-      importance: Importance.max, // CRITICAL for floating popup
+      description: 'Notifications for farming advisory alerts and chat messages',
+      importance: Importance.max,
       playSound: true,
       enableVibration: true,
     );
@@ -29,29 +40,28 @@ class NotificationService {
   static Future<void> showNotification({
     required String title,
     required String body,
+    String? payload,
   }) async {
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
+    const androidDetails = AndroidNotificationDetails(
       'advisory_channel',
       'Advisory Notifications',
-      channelDescription: 'Notifications for farming advisory alerts',
+      channelDescription: 'Notifications for farming advisory alerts and chat messages',
       importance: Importance.max,
       priority: Priority.high,
       playSound: true,
       enableVibration: true,
-      fullScreenIntent: true, // helps force heads-up popup
+      fullScreenIntent: true,
       ticker: 'ticker',
     );
 
-    const NotificationDetails platformDetails =
-        NotificationDetails(android: androidDetails);
+    const platformDetails = NotificationDetails(android: androidDetails);
 
-    // unique ID so multiple notifications don't overwrite each other
     await _notificationsPlugin.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
       body,
       platformDetails,
+      payload: payload,
     );
   }
 }
