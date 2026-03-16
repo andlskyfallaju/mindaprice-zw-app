@@ -18,6 +18,7 @@ class AdvisoryScreen extends StatefulWidget {
 class _AdvisoryScreenState extends State<AdvisoryScreen> {
   final TextEditingController _controller = TextEditingController();
   bool _isSending = false;
+  bool _isGeneratingAI = false;
 
   final String baseUrl = "https://mindaprice-backend.onrender.com";
 
@@ -138,6 +139,63 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
       );
     } finally {
       setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> generateAIDraft() async {
+    setState(() => _isGeneratingAI = true);
+    
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception("User not logged in");
+
+      final idToken = await user.getIdToken(true);
+
+      // Pass the current weather readings so the AI knows the exact context without re-fetching
+      final weatherOverrides = (temperature != null && rainProbability != null && windSpeed != null) 
+          ? {
+              "temp": temperature,
+              "rain": precipitation ?? 0.0,
+              "wind": windSpeed,
+            }
+          : null;
+
+      final response = await http.post(
+        Uri.parse("$baseUrl/advisories/ai-draft"),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $idToken",
+        },
+        body: jsonEncode({
+          "location": "Zimbabwe",
+          "weather": weatherOverrides,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception("Server error: ${response.body}");
+      }
+      
+      final data = jsonDecode(response.body);
+      final draft = data["result"] ?? data["advisoryDraft"] ?? "";
+      
+      if (draft.isNotEmpty) {
+        setState(() {
+          _controller.text = draft;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("AI Draft generated successfully ✨")),
+        );
+      } else {
+         throw Exception("Received empty draft from AI.");
+      }
+      
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to generate AI draft: $e")),
+      );
+    } finally {
+      setState(() => _isGeneratingAI = false);
     }
   }
 
@@ -343,13 +401,35 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            "Send Manual Advisory",
-            style: GoogleFonts.montserrat(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.orange[800],
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Send Manual Advisory",
+                style: GoogleFonts.montserrat(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange[800],
+                ),
+              ),
+              if (_isGeneratingAI)
+                const SizedBox(
+                  width: 20, 
+                  height: 20, 
+                  child: CircularProgressIndicator(strokeWidth: 2)
+                )
+              else
+                TextButton.icon(
+                  onPressed: generateAIDraft,
+                  icon: const Icon(Icons.auto_awesome, color: Colors.purple, size: 20),
+                  label: Text("AI Assist", style: TextStyle(color: Colors.purple[700])),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
