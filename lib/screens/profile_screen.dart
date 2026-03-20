@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/cloudinary_service.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../widgets/app_background.dart';
+import '../widgets/app_gradient.dart';
+import 'package:image_picker/image_picker.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -13,8 +17,12 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   String username = '';
   String email = '';
+  String? photoUrl;
   String role = 'user';
   bool isLoading = true;
+  bool isUpdating = false;
+
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -39,6 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         username = (data['username'] ?? '').toString();
         email = (data['email'] ?? user.email ?? '').toString();
+        photoUrl = data['photoUrl'] as String?;
         role = (data['role'] ?? 'user').toString();
         isLoading = false;
       });
@@ -56,6 +65,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required IconData icon,
     required String title,
     required String value,
+    VoidCallback? onEdit,
   }) {
     return Container(
       width: double.infinity,
@@ -99,41 +109,163 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ),
+          if (onEdit != null)
+            IconButton(
+              icon: Icon(Icons.edit_outlined, size: 20, color: Colors.green[700]),
+              onPressed: onEdit,
+            ),
         ],
       ),
     );
   }
 
-  Widget buildAvatar() {
-    return CircleAvatar(
-      radius: 42,
-      backgroundColor: Colors.green[200],
-      child: Text(
-        username.isNotEmpty ? username[0].toUpperCase() : '?',
-        style: GoogleFonts.montserrat(
-          fontSize: 28,
-          fontWeight: FontWeight.bold,
-          color: Colors.black87,
+  Future<void> _updateUsername() async {
+    final TextEditingController controller = TextEditingController(text: username);
+    
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Edit Username", style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: "Enter new username"),
+          autofocus: true,
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text("Save"),
+          ),
+        ],
       ),
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != username) {
+      setState(() => isUpdating = true);
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          await FirebaseFirestore.instance.collection('users').doc(uid).update({
+            'username': newName,
+          });
+          setState(() => username = newName);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Username updated!")),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to update: $e")),
+        );
+      } finally {
+        setState(() => isUpdating = false);
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+        maxWidth: 512,
+      );
+
+      if (image == null) return;
+
+      setState(() => isUpdating = true);
+
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+
+      // Upload to Cloudinary instead of Firebase Storage
+      final url = await CloudinaryService.uploadProfilePicture(image.path, uid);
+
+      if (url == null) {
+        throw Exception("Cloudinary upload failed. Check your credentials.");
+      }
+
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'photoUrl': url,
+      });
+
+      setState(() => photoUrl = url);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Profile picture updated!")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to upload image: $e")),
+      );
+    } finally {
+      setState(() => isUpdating = false);
+    }
+  }
+
+  Widget buildAvatar() {
+    return Stack(
+      children: [
+        CircleAvatar(
+          radius: 50,
+          backgroundColor: Colors.green[200],
+          backgroundImage: photoUrl != null ? NetworkImage(photoUrl!) : null,
+          child: photoUrl == null
+              ? Text(
+                  username.isNotEmpty ? username[0].toUpperCase() : '?',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                )
+              : null,
+        ),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: GestureDetector(
+            onTap: _pickAndUploadImage,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green[800],
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Profile',
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          flexibleSpace: const AppGradient(),
+          elevation: 2,
+          foregroundColor: Colors.black87,
+          title: Text(
+            "Profile",
+            style: GoogleFonts.montserrat(
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
         ),
-      ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
+          : Stack(
+              children: [
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
                   buildAvatar(),
                   const SizedBox(height: 18),
                   Text(
@@ -157,6 +289,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.person_outline,
                     title: 'Username',
                     value: username.isNotEmpty ? username : 'Not set',
+                    onEdit: _updateUsername,
                   ),
                   buildInfoCard(
                     icon: Icons.email_outlined,
@@ -168,9 +301,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: 'Account Role',
                     value: role.toUpperCase(),
                   ),
-                ],
+                  ],
+                ),
               ),
-            ),
-    );
-  }
+              if (isUpdating)
+                Container(
+                  color: Colors.black26,
+                  child: const Center(child: CircularProgressIndicator()),
+                ),
+            ],
+          ),
+    ),
+  );
+}
 }

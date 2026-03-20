@@ -5,9 +5,14 @@ class WeatherService {
   // Local backend for emulator testing
   static const String baseUrl = "https://mindaprice-backend.onrender.com";
 
-  static Future<Map<String, dynamic>> fetchWeatherAdvisory() async {
+  static Future<Map<String, dynamic>> fetchWeatherAdvisory({double? lat, double? lon}) async {
+    String url = "$baseUrl/weather/advisory";
+    if (lat != null && lon != null) {
+      url += "?lat=${lat.toStringAsFixed(4)}&lon=${lon.toStringAsFixed(4)}";
+    }
+
     final response = await http.get(
-      Uri.parse("$baseUrl/weather/advisory"),
+      Uri.parse(url),
     );
 
     if (response.statusCode == 200) {

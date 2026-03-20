@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_background.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/recent_accounts_service.dart';
+import '../widgets/app_gradient.dart';
 
 class RecentAccountPasswordScreen extends StatefulWidget {
   final String email;
@@ -133,13 +135,21 @@ class _RecentAccountPasswordScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Sign in',
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          flexibleSpace: const AppGradient(),
+          elevation: 2,
+          foregroundColor: Colors.black87,
+          title: Text(
+            "Account Activity",
+            style: GoogleFonts.montserrat(
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
         ),
-      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -202,6 +212,7 @@ class _RecentAccountPasswordScreenState
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

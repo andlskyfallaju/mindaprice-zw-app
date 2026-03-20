@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 
 import 'chat_screen.dart';
+import 'user_search_screen.dart';
+import '../widgets/app_background.dart';
+import '../services/chat_service.dart';
+import '../widgets/app_gradient.dart';
 
 class ChatListScreen extends StatelessWidget {
   const ChatListScreen({super.key});
@@ -16,48 +21,89 @@ class ChatListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
+    final ChatService chatService = ChatService();
 
-    return Scaffold(
-      appBar: AppBar(
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+        flexibleSpace: const AppGradient(),
+        elevation: 2,
         title: Text(
-          "Messenger",
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+          "MindaPrice Chat",
+          style: GoogleFonts.montserrat(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
+        foregroundColor: Colors.black87,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const UserSearchScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: () {},
+          ),
+        ],
       ),
       body: currentUser == null
           ? const Center(child: Text("Not logged in"))
           : StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('users')
-                  .orderBy('username')
-                  .snapshots(),
-              builder: (context, userSnapshot) {
-                if (userSnapshot.connectionState == ConnectionState.waiting) {
+              stream: chatService.getContacts(),
+              builder: (context, contactSnapshot) {
+                if (contactSnapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                if (!userSnapshot.hasData || userSnapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text("No users found."));
+                final contacts = contactSnapshot.data?.docs ?? [];
+
+                if (contacts.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline, size: 60, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        Text(
+                          "No contacts yet.",
+                          style: GoogleFonts.montserrat(color: Colors.grey[600]),
+                        ),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const UserSearchScreen(),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green[800],
+                          ),
+                          child: const Text("Search for Users", style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  );
                 }
 
-                final users = userSnapshot.data!.docs
-                    .where((doc) => doc.id != currentUser.uid)
-                    .toList();
-
                 return ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: users.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemCount: contacts.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 80),
                   itemBuilder: (context, index) {
-                    final user = users[index];
-                    final username = user['username'] ?? 'Unknown User';
-                    final email = user['email'] ?? '';
-                    final role = user.data().toString().contains('role')
-                        ? (user['role'] ?? 'user')
-                        : 'user';
+                    final contact = contacts[index];
+                    final username = contact['username'] ?? 'Unknown User';
+                    final otherUid = contact.id;
 
-                    final conversationId =
-                        getConversationId(currentUser.uid, user.id);
+                    final conversationId = getConversationId(currentUser.uid, otherUid);
 
                     return StreamBuilder<DocumentSnapshot>(
                       stream: FirebaseFirestore.instance
@@ -65,109 +111,112 @@ class ChatListScreen extends StatelessWidget {
                           .doc(conversationId)
                           .snapshots(),
                       builder: (context, convoSnapshot) {
+                        String lastMessage = "Tap to chat";
+                        String timeText = "";
                         int unreadCount = 0;
-                        String subtitle = email;
 
-                        if (convoSnapshot.hasData &&
-                            convoSnapshot.data!.exists) {
-                          final data = Map<String, dynamic>.from(
-                            convoSnapshot.data!.data() as Map,
-                          );
-                          final unreadCounts =
-                            Map<String, dynamic>.from(data['unreadCounts'] ?? {});
-                          unreadCount =
-                              (unreadCounts[currentUser.uid] ?? 0) as int;
-                          subtitle = (data['lastMessage'] ?? email).toString();
+                        if (convoSnapshot.hasData && convoSnapshot.data!.exists) {
+                          final data = convoSnapshot.data!.data() as Map<String, dynamic>;
+                          lastMessage = data['lastMessage'] ?? "Tap to chat";
+                          
+                          if (data['lastUpdated'] != null) {
+                            final DateTime date = (data['lastUpdated'] as Timestamp).toDate();
+                            timeText = DateFormat('jm').format(date); // e.g. 10:45 AM
+                          }
+
+                          final unreadCounts = Map<String, dynamic>.from(data['unreadCounts'] ?? {});
+                          unreadCount = (unreadCounts[currentUser.uid] ?? 0) as int;
                         }
 
-                        return Material(
-                          elevation: 2,
-                          borderRadius: BorderRadius.circular(20),
-                          color: Colors.white,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(20),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ChatScreen(
-                                    otherUserId: user.id,
-                                    otherUsername: username,
-                                  ),
+                        return ListTile(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ChatScreen(
+                                  otherUserId: otherUid,
+                                  otherUsername: username,
                                 ),
+                              ),
+                            );
+                          },
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          leading: StreamBuilder<DocumentSnapshot>(
+                            stream: FirebaseFirestore.instance.collection('users').doc(otherUid).snapshots(),
+                            builder: (context, userSnapshot) {
+                              String? pUrl;
+                              if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                                pUrl = (userSnapshot.data!.data() as Map<String, dynamic>)['photoUrl'] as String?;
+                              }
+
+                              return CircleAvatar(
+                                radius: 28,
+                                backgroundColor: const Color(0xFFD1D7DB),
+                                backgroundImage: pUrl != null ? NetworkImage(pUrl) : null,
+                                child: pUrl == null
+                                    ? Text(
+                                        username[0].toUpperCase(),
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : null,
                               );
                             },
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 24,
-                                    child: Text(
-                                      username.toString().isNotEmpty
-                                          ? username.toString()[0].toUpperCase()
-                                          : "?",
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          username,
-                                          style: GoogleFonts.montserrat(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          subtitle,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: GoogleFonts.montserrat(
-                                            fontSize: 12,
-                                            color: Colors.black54,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    children: [
-                                      if (role == "admin")
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 5,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.orange.shade100,
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            "Admin",
-                                            style: GoogleFonts.montserrat(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.orange.shade900,
-                                            ),
-                                          ),
-                                        ),
-                                      if (unreadCount > 0) ...[
-                                        const SizedBox(height: 8),
-                                        Badge(
-                                          label: Text(unreadCount.toString()),
-                                        ),
-                                      ]
-                                    ],
-                                  ),
-                                ],
+                          ),
+                          title: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                username,
+                                style: GoogleFonts.montserrat(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
+                              Text(
+                                timeText,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: unreadCount > 0 ? Colors.green[700] : Colors.grey,
+                                  fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  lastMessage,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ),
+                              if (unreadCount > 0)
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green[700],
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Text(
+                                    unreadCount.toString(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         );
                       },
@@ -176,6 +225,17 @@ class ChatListScreen extends StatelessWidget {
                 );
               },
             ),
-    );
-  }
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const UserSearchScreen()),
+          );
+        },
+        backgroundColor: Colors.green[800],
+        child: const Icon(Icons.chat, color: Colors.white),
+      ),
+    ),
+  );
+}
 }

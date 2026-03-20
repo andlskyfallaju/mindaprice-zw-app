@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../widgets/app_background.dart';
+import '../widgets/app_gradient.dart';
 import '../services/recent_accounts_service.dart';
 import 'recent_account_password_screen.dart';
 
@@ -144,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         elevation: 2,
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
@@ -178,7 +180,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: GoogleFonts.montserrat(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                          color: Colors.black87,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -186,7 +187,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         email,
                         style: GoogleFonts.montserrat(
                           fontSize: 12,
-                          color: Colors.black54,
                         ),
                       ),
                     ],
@@ -220,7 +220,6 @@ class _LoginScreenState extends State<LoginScreen> {
             style: GoogleFonts.montserrat(
               fontSize: 21,
               fontWeight: FontWeight.bold,
-              color: Colors.black87,
             ),
           ),
           const SizedBox(height: 6),
@@ -228,7 +227,6 @@ class _LoginScreenState extends State<LoginScreen> {
             "Continue with a recently used account.",
             style: GoogleFonts.montserrat(
               fontSize: 13,
-              color: Colors.black54,
             ),
           ),
           const SizedBox(height: 16),
@@ -251,7 +249,6 @@ class _LoginScreenState extends State<LoginScreen> {
               style: GoogleFonts.montserrat(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Colors.black54,
               ),
             ),
           ),
@@ -322,11 +319,11 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         CircleAvatar(
           radius: 34,
-          backgroundColor: Colors.green[200],
+          backgroundColor: Colors.white,
           child: const Icon(
             Icons.person_outline_rounded,
             size: 34,
-            color: Colors.black87,
+            color: Colors.green,
           ),
         ),
         const SizedBox(height: 16),
@@ -335,7 +332,6 @@ class _LoginScreenState extends State<LoginScreen> {
           style: GoogleFonts.montserrat(
             fontSize: 24,
             fontWeight: FontWeight.bold,
-            color: Colors.black87,
           ),
         ),
         const SizedBox(height: 6),
@@ -344,7 +340,6 @@ class _LoginScreenState extends State<LoginScreen> {
           textAlign: TextAlign.center,
           style: GoogleFonts.montserrat(
             fontSize: 13,
-            color: Colors.black54,
             height: 1.4,
           ),
         ),
@@ -363,18 +358,23 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final hasRecentAccounts = recentAccounts.isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Login',
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          flexibleSpace: const AppGradient(),
+          elevation: 2,
+          foregroundColor: Colors.black87,
+          title: Text(
+            'Login',
+            style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+          ),
         ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            buildHeader(),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              buildHeader(),
             const SizedBox(height: 28),
             buildRecentAccountsSection(),
             if (hasRecentAccounts) buildDividerLabel(),
@@ -389,6 +389,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

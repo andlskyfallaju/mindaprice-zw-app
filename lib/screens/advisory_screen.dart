@@ -4,9 +4,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 import '../services/notification_service.dart';
 import '../services/weather_service.dart';
+import 'advisory_archive_screen.dart';
+import '../widgets/app_background.dart';
+import '../widgets/app_gradient.dart';
 
 class AdvisoryScreen extends StatefulWidget {
   const AdvisoryScreen({super.key});
@@ -30,12 +35,56 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
   double? windSpeed;
 
   String userRole = "user";
+  double? _lat;
+  double? _lon;
+  String _locationName = "your area";
 
   @override
   void initState() {
     super.initState();
-    loadWeatherAdvisory();
+    _fetchLocationThenWeather();
     loadUserRole();
+  }
+
+  Future<void> _fetchLocationThenWeather() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        loadWeatherAdvisory();
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        loadWeatherAdvisory();
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      _lat = pos.latitude;
+      _lon = pos.longitude;
+
+      // Resolve human-readable location name
+      try {
+        final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        final p = placemarks.isNotEmpty ? placemarks.first : null;
+        final city = p?.locality ?? p?.subAdministrativeArea ?? p?.administrativeArea;
+        final country = p?.country;
+        if (city != null && country != null) {
+          _locationName = "$city, $country";
+        } else if (country != null) {
+          _locationName = country;
+        }
+      } catch (_) {}
+
+      loadWeatherAdvisory(lat: _lat, lon: _lon);
+    } catch (_) {
+      loadWeatherAdvisory();
+    }
   }
 
   Future<void> loadUserRole() async {
@@ -54,9 +103,9 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
     }
   }
 
-  Future<void> loadWeatherAdvisory() async {
+  Future<void> loadWeatherAdvisory({double? lat, double? lon}) async {
     try {
-      final data = await WeatherService.fetchWeatherAdvisory();
+      final data = await WeatherService.fetchWeatherAdvisory(lat: lat, lon: lon);
 
       setState(() {
         temperature = (data["weather"]["temperature"] as num).toDouble();
@@ -125,6 +174,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
       await NotificationService.showNotification(
         title: "Farming Advisory",
         body: message,
+        notificationType: 'advisory',
         payload: jsonEncode({"type": "advisory"}),
       );
 
@@ -167,7 +217,9 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
           "Authorization": "Bearer $idToken",
         },
         body: jsonEncode({
-          "location": "Zimbabwe",
+          "location": _locationName,
+          "lat": _lat,
+          "lon": _lon,
           "weather": weatherOverrides,
         }),
       );
@@ -323,6 +375,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                       height: 1.4,
+                      color: Colors.black87,
                     ),
                   ),
                 ),
@@ -334,8 +387,8 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
             alignment: Alignment.centerRight,
             child: TextButton.icon(
               onPressed: loadWeatherAdvisory,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text("Refresh"),
+              icon: const Icon(Icons.refresh_rounded, color: Colors.black87),
+              label: const Text("Refresh", style: TextStyle(color: Colors.black87)),
             ),
           )
         ],
@@ -393,9 +446,13 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: Colors.white,
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))
+        color: Theme.of(context).cardColor,
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).brightness == Brightness.dark ? Colors.black26 : Colors.black12,
+            blurRadius: 10,
+            offset: const Offset(0, 4)
+          ),
         ],
       ),
       child: Column(
@@ -404,14 +461,17 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                "Send Manual Advisory",
-                style: GoogleFonts.montserrat(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.orange[800],
+              Expanded(
+                child: Text(
+                  "Send Manual Advisory",
+                  style: GoogleFonts.montserrat(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange[800],
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               if (_isGeneratingAI)
                 const SizedBox(
                   width: 20, 
@@ -436,7 +496,6 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
             "Broadcast a farming update to all subscribed users.",
             style: GoogleFonts.montserrat(
               fontSize: 13,
-              color: Colors.black54,
               height: 1.4,
             ),
           ),
@@ -447,14 +506,14 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
             decoration: InputDecoration(
               hintText: "Type your advisory message here...",
               filled: true,
-              fillColor: Colors.grey.shade50,
+              fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.grey.shade50,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+                borderSide: BorderSide(color: Theme.of(context).dividerColor),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+                borderSide: BorderSide(color: Theme.of(context).dividerColor),
               ),
             ),
           ),
@@ -487,9 +546,13 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: Colors.white,
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))
+        color: Theme.of(context).cardColor,
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).brightness == Brightness.dark ? Colors.black26 : Colors.black12,
+            blurRadius: 10,
+            offset: const Offset(0, 4)
+          ),
         ],
       ),
       child: Column(
@@ -508,13 +571,13 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
             "Latest farming updates sent by admins.",
             style: GoogleFonts.montserrat(
               fontSize: 13,
-              color: Colors.black54,
             ),
           ),
           const SizedBox(height: 16),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('advisories')
+                .where('createdAt', isGreaterThan: Timestamp.fromDate(DateTime.now().subtract(const Duration(days: 3))))
                 .orderBy('createdAt', descending: true)
                 .limit(10)
                 .snapshots(),
@@ -550,7 +613,9 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
+                      color: Theme.of(context).brightness == Brightness.dark 
+                          ? Colors.grey[800] 
+                          : Colors.orange.shade50,
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: Column(
@@ -570,7 +635,9 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
                             dateText,
                             style: GoogleFonts.montserrat(
                               fontSize: 11,
-                              color: Colors.black54,
+                              color: Theme.of(context).brightness == Brightness.dark 
+                                  ? Colors.white60 
+                                  : Colors.black54,
                             ),
                           ),
                         ],
@@ -581,6 +648,30 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
               );
             },
           ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AdvisoryArchiveScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.history_toggle_off),
+              label: const Text("View Past Advisories"),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                side: BorderSide(color: Colors.orange.shade800),
+                foregroundColor: Colors.orange.shade800,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -590,23 +681,30 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
   Widget build(BuildContext context) {
     final isAdmin = userRole == "admin";
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Advisories",
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          flexibleSpace: const AppGradient(),
+          elevation: 2,
+          title: Text(
+            "Farming Advisory",
+            style: GoogleFonts.montserrat(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 24),
-            buildWeatherSection(),
-            const SizedBox(height: 20),
-            if (isAdmin) buildAdminSenderSection(),
-            if (!isAdmin) buildBulletinBoard(),
-            const SizedBox(height: 28),
-          ],
+        body: SingleChildScrollView(
+          child: Column(
+            children: [
+              const SizedBox(height: 24),
+              buildWeatherSection(),
+              const SizedBox(height: 20),
+              if (isAdmin) buildAdminSenderSection(),
+              if (!isAdmin) buildBulletinBoard(),
+              const SizedBox(height: 28),
+            ],
+          ),
         ),
       ),
     );

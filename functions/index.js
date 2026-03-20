@@ -62,28 +62,32 @@ exports.sendAdvisory = functions.https.onCall(async (data, context) => {
 
 // 1. HTTP Callable Function: On-Demand AI Assist for Admins
 exports.generateManualAIAdvisory = functions.https.onCall(async (data, context) => {
-  // Ensure the user is authenticated (Optional: Check if they are Admin)
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "You must be logged in.");
   }
 
-  const location = data.location || "Zimbabwe";
-  const weatherOverride = data.weather; // Optional manual weather context
+  const location = (data.location || "the local area").trim();
+  const lat = data.lat ? parseFloat(data.lat) : null;
+  const lon = data.lon ? parseFloat(data.lon) : null;
+  const weatherOverride = data.weather;
 
   let weatherText = "";
   if (weatherOverride) {
-    weatherText = `Current weather around the target area is approximately Temp: ${weatherOverride.temp}°C, Rain: ${weatherOverride.rain}mm, Wind: ${weatherOverride.wind}km/h.`;
+    weatherText = `Current weather around ${location} is approximately Temp: ${weatherOverride.temp}\u00b0C, Rain: ${weatherOverride.rain}mm, Wind: ${weatherOverride.wind}km/h.`;
   } else {
-    // Attempt to grab live weather for Harare if none provided
-    const liveWeather = await getDailyWeather();
+    const liveWeather = await getDailyWeather(
+      lat ?? -17.824858,
+      lon ?? 31.053028
+    );
     if (liveWeather) {
-      weatherText = `Current weather in the region is Temp: ${liveWeather.temp}°C, Rain: ${liveWeather.rain}mm, Wind: ${liveWeather.wind}km/h.`;
+      weatherText = `Current weather in ${location} is Temp: ${liveWeather.temp}\u00b0C, Rain: ${liveWeather.rain}mm, Wind: ${liveWeather.wind}km/h.`;
     }
   }
 
   const prompt = `
-    You are an expert agricultural advisor for MindaPrice ZW, a farming app in Zimbabwe.
+    You are an expert agricultural advisor for MindaPrice ZW, a smart farming app.
     Generate a short, actionable, and encouraging farming advisory broadcast (max 2-3 sentences based on WhatsApp style).
+    The user is located in: ${location}.
     ${weatherText}
     Focus on practical advice based on this weather (e.g., watering schedules, pest warnings, storage advice).
     Do NOT include greetings or sign-offs. Just the advisory content.
@@ -94,7 +98,6 @@ exports.generateManualAIAdvisory = functions.https.onCall(async (data, context) 
       model: 'gemini-2.5-flash',
       contents: prompt,
     });
-    
     return { advisoryDraft: response.text.trim() };
   } catch (error) {
     console.error("Gemini Error:", error);
@@ -104,8 +107,6 @@ exports.generateManualAIAdvisory = functions.https.onCall(async (data, context) 
 
 // 2. HTTP Webhook: Automated Daily Advisory for cron-job.org
 exports.triggerAutomatedAdvisory = functions.https.onRequest(async (req, res) => {
-  // Simple Secret Verification so random people cannot trigger the cron job
-  // Note: Set cron_secret in firebase config or use a hardcoded fallback for Alpha
   const expectedSecret = functions.config().cron?.secret;
   const providedSecret = req.query.secret || req.headers["x-cron-secret"];
 
@@ -115,18 +116,39 @@ exports.triggerAutomatedAdvisory = functions.https.onRequest(async (req, res) =>
   }
 
   try {
-    // 1. Fetch live weather (Default: Harare, ZW)
-    const liveWeather = await getDailyWeather();
-    if (!liveWeather) {
+    // Regions from Firebase config (cron.regions JSON) or fall back to Harare
+    let regions;
+    try {
+      const raw = functions.config().cron?.regions;
+      regions = raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      regions = null;
+    }
+
+    if (!regions || regions.length === 0) {
+      regions = [{ name: "Harare, Zimbabwe", lat: -17.824858, lon: 31.053028 }];
+    }
+
+    let combinedWeatherContext = "";
+    for (const r of regions) {
+      const w = await getDailyWeather(r.lat, r.lon);
+      if (w) {
+        combinedWeatherContext += `${r.name}: Temp: ${w.temp}\u00b0C, Precipitation: ${w.rain}mm, Wind speed: ${w.wind}km/h.\n`;
+      }
+    }
+
+    if (!combinedWeatherContext) {
        res.status(500).send("Failed to fetch weather data.");
        return;
     }
 
-    // 2. Generate AI Advisory
+    const regionNames = regions.map(r => r.name).join(", ");
+
     const prompt = `
-      You are an expert agricultural advisor for MindaPrice ZW, a farming app in Zimbabwe.
+      You are an expert agricultural advisor for MindaPrice ZW, a smart farming app.
       Generate a short, actionable, and encouraging daily farming advisory broadcast (max 2-3 sentences).
-      The current weather today is Temp: ${liveWeather.temp}°C, Precipitation: ${liveWeather.rain}mm, Wind speed: ${liveWeather.wind}km/h.
+      Cover these regions: ${regionNames}.
+      ${combinedWeatherContext}
       Provide practical advice directly to farmers based ONLY on this weather.
       Do NOT include placeholders, greetings, or sign-offs.
     `;
@@ -137,23 +159,19 @@ exports.triggerAutomatedAdvisory = functions.https.onRequest(async (req, res) =>
     });
     const generatedMessage = generatedResponse.text.trim();
 
-    // 3. Save to Firestore
     await admin.firestore().collection("advisories").add({
       message: `[Automated AI Advisory]\n${generatedMessage}`,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       isAutomated: true,
     });
 
-    // 4. Broadcast FCM Push Notification
     await admin.messaging().send({
       topic: "advisories",
       notification: {
-        title: "Daily Farming Advisory \u{1F33E}", // Wheat emoji
+        title: "Daily Farming Advisory \u{1F33E}",
         body: generatedMessage,
       },
-      data: {
-        type: "advisory",
-      },
+      data: { type: "advisory" },
     });
 
      res.status(200).send("Automated advisory generated and broadcasted successfully.");

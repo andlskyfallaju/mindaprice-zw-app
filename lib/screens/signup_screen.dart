@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../widgets/app_background.dart';
+import '../widgets/app_gradient.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -102,16 +105,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sign Up')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Username
-            TextField(
-              controller: _usernameController,
-              decoration: const InputDecoration(labelText: 'Username'),
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          flexibleSpace: const AppGradient(),
+          elevation: 2,
+          foregroundColor: Colors.black87,
+          title: Text(
+            'Create Account',
+            style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+          ),
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              // Username
+              TextField(
+                controller: _usernameController,
+                decoration: InputDecoration(
+                labelText: 'Username',
+                filled: true,
+                fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.transparent,
+              ),
             ),
             const SizedBox(height: 15),
 
@@ -119,7 +136,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email'),
+              decoration: InputDecoration(
+                labelText: 'Email',
+                filled: true,
+                fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.transparent,
+              ),
             ),
             const SizedBox(height: 15),
 
@@ -129,6 +150,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
               obscureText: _obscurePassword,
               decoration: InputDecoration(
                 labelText: 'Password',
+                filled: true,
+                fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.transparent,
                 suffixIcon: IconButton(
                   icon: Icon(
                       _obscurePassword ? Icons.visibility : Icons.visibility_off),
@@ -155,6 +178,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

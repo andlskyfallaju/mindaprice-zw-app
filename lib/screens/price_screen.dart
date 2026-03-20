@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_background.dart';
+import '../widgets/app_gradient.dart';
+import '../services/fcm_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -10,15 +13,29 @@ class PriceScreen extends StatelessWidget {
     final CollectionReference prices =
         FirebaseFirestore.instance.collection('market_prices');
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Market Prices')),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: prices.snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text('Error loading data'));
-          }
-          if (!snapshot.hasData) {
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          flexibleSpace: const AppGradient(),
+          elevation: 2,
+          foregroundColor: Colors.black87,
+          title: Text(
+            "Market Prices",
+            style: GoogleFonts.montserrat(
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+        body: StreamBuilder<QuerySnapshot>(
+          stream: prices.snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const Center(child: Text('Error loading data'));
+            }
+            if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -41,6 +58,7 @@ class PriceScreen extends StatelessWidget {
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 }

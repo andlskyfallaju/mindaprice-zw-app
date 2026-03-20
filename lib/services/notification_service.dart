@@ -1,4 +1,5 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
@@ -40,21 +41,32 @@ class NotificationService {
   static Future<void> showNotification({
     required String title,
     required String body,
+    required String notificationType, // 'advisory' or 'messenger'
     String? payload,
   }) async {
-    const androidDetails = AndroidNotificationDetails(
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Check if notifications are enabled for this type
+    final isEnabled = prefs.getBool('${notificationType}_notifications') ?? true;
+    if (!isEnabled) return;
+
+    // Get sound and vibration preferences
+    final soundEnabled = prefs.getBool('sound_enabled') ?? true;
+    final vibrationEnabled = prefs.getBool('vibration_enabled') ?? true;
+
+    final androidDetails = AndroidNotificationDetails(
       'advisory_channel',
       'Advisory Notifications',
       channelDescription: 'Notifications for farming advisory alerts and chat messages',
       importance: Importance.max,
       priority: Priority.high,
-      playSound: true,
-      enableVibration: true,
+      playSound: soundEnabled,
+      enableVibration: vibrationEnabled,
       fullScreenIntent: true,
       ticker: 'ticker',
     );
 
-    const platformDetails = NotificationDetails(android: androidDetails);
+    final platformDetails = NotificationDetails(android: androidDetails);
 
     await _notificationsPlugin.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,

@@ -12,6 +12,8 @@ import 'advisory_screen.dart';
 import 'chat_list_screen.dart';
 import '../services/fcm_service.dart';
 import '../services/weather_service.dart';
+import '../widgets/app_background.dart';
+import '../widgets/app_gradient.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -130,15 +132,19 @@ Future<void> fetchUsername() async {
           }
         });
       }
+
+      // Fetch dynamic weather now that we have the coordinates
+      loadMiniWeather(lat: position.latitude, lon: position.longitude);
+      
     } catch (_) {
       if (!mounted) return;
       setState(() => locationText = "Location unavailable");
     }
   }
 
-  Future<void> loadMiniWeather() async {
+  Future<void> loadMiniWeather({double? lat, double? lon}) async {
     try {
-      final data = await WeatherService.fetchWeatherAdvisory();
+      final data = await WeatherService.fetchWeatherAdvisory(lat: lat, lon: lon);
 
       setState(() {
         miniTemp = (data["weather"]["temperature"] as num).toDouble();
@@ -324,7 +330,7 @@ Future<void> fetchUsername() async {
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 20),
       child: Material(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         elevation: 3,
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
@@ -356,7 +362,6 @@ Future<void> fetchUsername() async {
                         style: GoogleFonts.montserrat(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -364,7 +369,6 @@ Future<void> fetchUsername() async {
                         subtitle,
                         style: GoogleFonts.montserrat(
                           fontSize: 13,
-                          color: Colors.black54,
                           height: 1.35,
                         ),
                       ),
@@ -382,64 +386,79 @@ Future<void> fetchUsername() async {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "MindaPrice ZW",
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
-        ),
-        actions: [
-  Padding(
-    padding: const EdgeInsets.only(right: 8),
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(currentTime, style: const TextStyle(fontSize: 12)),
-        InkWell(
-          onTap: toggleLocation,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Text(
-              locationText,
-              style: const TextStyle(
-                fontSize: 11,
-                decoration: TextDecoration.underline,
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          flexibleSpace: const AppGradient(),
+          automaticallyImplyLeading: false,
+          leadingWidth: 60,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 14),
+            child: Center(
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.pushNamed(context, '/settings').then((_) {
+                    fetchUsername();
+                  });
+                },
+                child: photoUrl.isNotEmpty
+                    ? CircleAvatar(
+                        radius: 17,
+                        backgroundImage: NetworkImage(photoUrl),
+                      )
+                    : CircleAvatar(
+                        radius: 17,
+                        backgroundColor: Colors.white, // Changed from green[200]
+                        child: Text(
+                          username.isNotEmpty ? username[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green, // Changed from black87
+                          ),
+                        ),
+                      ),
               ),
             ),
           ),
-        ),
-      ],
-    ),
-  ),
-  GestureDetector(
-    onTap: () {
-      Navigator.pushNamed(context, '/settings').then((_) {
-        fetchUsername();
-      });
-    },
-    child: Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: photoUrl.isNotEmpty
-          ? CircleAvatar(
-              radius: 18,
-              backgroundImage: NetworkImage(photoUrl),
-            )
-          : CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.green[200],
-              child: Text(
-                username.isNotEmpty ? username[0].toUpperCase() : '?',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
+          title: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              "MindaPrice ZW",
+              style: GoogleFonts.montserrat(
+                fontWeight: FontWeight.bold,
               ),
             ),
-    ),
-  ),
-  IconButton(icon: const Icon(Icons.logout), onPressed: logout),
-],
+          ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(currentTime, style: const TextStyle(fontSize: 12)),
+                InkWell(
+                  onTap: toggleLocation,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 150),
+                    child: Text(
+                      locationText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -507,6 +526,7 @@ Future<void> fetchUsername() async {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
