@@ -33,6 +33,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    
+    // Check for arguments from notification navigation if initialIndex is default
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is int) {
+        setState(() {
+          _currentIndex = args;
+        });
+      }
+    });
   }
 
   @override

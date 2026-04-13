@@ -65,6 +65,7 @@ class _RecentAccountPasswordScreenState
         await user.sendEmailVerification();
         await _auth.signOut();
 
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(

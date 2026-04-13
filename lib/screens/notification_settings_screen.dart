@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/fcm_service.dart';
 import '../widgets/app_background.dart';
 import '../widgets/app_gradient.dart';
-import '../services/fcm_service.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -56,7 +56,7 @@ class _NotificationSettingsScreenState
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
         boxShadow: const [
           BoxShadow(
@@ -115,6 +115,7 @@ class _NotificationSettingsScreenState
                     onChanged: (value) {
                       setState(() => advisoryNotifications = value);
                       saveSetting('advisory_notifications', value);
+                      FcmService.updateTopicSubscription('advisories', value);
                     },
                   ),
                   buildSwitchTile(

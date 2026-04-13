@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:io';
 
 import 'profile_screen.dart';
 import '../widgets/app_background.dart';
@@ -11,6 +10,7 @@ import 'notification_settings_screen.dart';
 import 'license_screen.dart';
 import '../widgets/chat_wallpaper_picker.dart';
 import '../services/theme_service.dart';
+import '../services/fcm_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -63,6 +63,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           TextButton(
             onPressed: () async {
+              // Cleanup FCM subscriptions and tokens before signing out
+              await FcmService.prepareForLogout();
+
               await FirebaseAuth.instance.signOut();
               if (context.mounted) {
                 Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
@@ -172,6 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           flexibleSpace: const AppGradient(),
+          automaticallyImplyLeading: false,
           elevation: 2,
           foregroundColor: Colors.black87,
           title: Text(

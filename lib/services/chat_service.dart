@@ -1,9 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+
 
 class ChatService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final String _baseUrl = "https://mindaprice-backend.onrender.com";
 
   String? get currentUid => _auth.currentUser?.uid;
 
@@ -34,6 +39,22 @@ class ChatService {
       'status': 'pending',
       'timestamp': FieldValue.serverTimestamp(),
     });
+
+    // Automatically send a push notification to the recipient
+    try {
+      await http.post(
+        Uri.parse("$_baseUrl/messages/notify"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "recipientUid": toUid,
+          "senderUid": fromUid,
+          "senderName": fromUsername,
+          "message": "Sent you a chat request! 👋",
+        }),
+      );
+    } catch (e) {
+      debugPrint("Failed to send chat request notification: $e");
+    }
   }
 
   Future<void> acceptChatRequest(String fromUid, String fromUsername) async {

@@ -6,7 +6,9 @@ import '../widgets/app_background.dart';
 import '../widgets/app_gradient.dart';
 
 class AdvisoryArchiveScreen extends StatelessWidget {
-  const AdvisoryArchiveScreen({super.key});
+  final String currentTopicName;
+
+  const AdvisoryArchiveScreen({super.key, required this.currentTopicName});
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +37,17 @@ class AdvisoryArchiveScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          final allDocs = snapshot.data?.docs ?? [];
+
+          final docs = allDocs.where((doc) {
+            final data = Map<String, dynamic>.from(doc.data() as Map);
+            final source = data['source']?.toString();
+            final topic = data['topic']?.toString();
+
+            if (source == 'manual') return true;
+            if (currentTopicName.isNotEmpty && topic == currentTopicName) return true;
+            return false;
+          }).toList();
 
           // Client-side sort to avoid requiring a composite index
           final sortedDocs = List<DocumentSnapshot>.from(docs);

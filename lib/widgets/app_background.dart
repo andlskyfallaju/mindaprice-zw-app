@@ -23,8 +23,8 @@ class AppBackground extends StatelessWidget {
             filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
             child: Container(
               color: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFF1A1A1A).withOpacity(0.65)
-                  : Colors.white.withOpacity(0.65),
+                  ? const Color(0xFF1A1A1A).withValues(alpha: 0.65)
+                  : Colors.white.withValues(alpha: 0.65),
             ),
           ),
         ),

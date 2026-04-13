@@ -69,7 +69,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                   final licenses = _packageToLicenses[packageName]!;
                   
                   return Card(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Theme.of(context).cardColor.withValues(alpha: 0.9),
                     margin: const EdgeInsets.only(bottom: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(15),
@@ -142,7 +142,7 @@ class LicenseDetailScreen extends StatelessWidget {
           itemBuilder: (context, index) {
             final license = licenses[index];
             return Card(
-              color: Colors.white.withOpacity(0.95),
+              color: Theme.of(context).cardColor.withValues(alpha: 0.95),
               margin: const EdgeInsets.only(bottom: 20),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
@@ -167,7 +167,6 @@ class LicenseDetailScreen extends StatelessWidget {
                       style: GoogleFonts.montserrat(
                         fontSize: 13,
                         height: 1.5,
-                        color: Colors.black87,
                       ),
                     ),
                   ],

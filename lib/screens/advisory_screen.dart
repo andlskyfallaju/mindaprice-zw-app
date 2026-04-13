@@ -35,15 +35,39 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
   double? windSpeed;
 
   String userRole = "user";
+  String accountType = "farmer";
   double? _lat;
   double? _lon;
   String _locationName = "your area";
+  String _currentTopicName = "";
 
   @override
   void initState() {
     super.initState();
     _fetchLocationThenWeather();
     loadUserRole();
+    WeatherService.weatherNotifier.addListener(_onWeatherUpdated);
+  }
+
+  @override
+  void dispose() {
+    WeatherService.weatherNotifier.removeListener(_onWeatherUpdated);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onWeatherUpdated() {
+    final data = WeatherService.weatherNotifier.value;
+    if (data == null || !mounted) return;
+
+    setState(() {
+      temperature = (data["weather"]["temperature"] as num).toDouble();
+      rainProbability = (data["weather"]["precipitation_probability"] as num).toInt();
+      precipitation = (data["weather"]["precipitation"] as num).toDouble();
+      windSpeed = (data["weather"]["wind_speed"] as num).toDouble();
+      weatherAdvisory = data["advisory"] ?? "";
+      _isLoadingWeather = false;
+    });
   }
 
   Future<void> _fetchLocationThenWeather() async {
@@ -62,9 +86,21 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
         loadWeatherAdvisory();
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      Position? pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 8),
+        );
+      } catch (e) {
+        pos = await Geolocator.getLastKnownPosition();
+      }
+
+      if (pos == null) {
+        loadWeatherAdvisory();
+        return;
+      }
+
       _lat = pos.latitude;
       _lon = pos.longitude;
 
@@ -72,15 +108,18 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
       try {
         final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
         final p = placemarks.isNotEmpty ? placemarks.first : null;
-        final city = p?.locality ?? p?.subAdministrativeArea ?? p?.administrativeArea;
-        final country = p?.country;
-        if (city != null && country != null) {
+        final city = p?.locality ?? p?.subAdministrativeArea ?? p?.administrativeArea ?? 'UnknownCity';
+        final country = p?.country ?? 'UnknownCountry';
+        if (p != null) {
           _locationName = "$city, $country";
-        } else if (country != null) {
-          _locationName = country;
+          _currentTopicName = "advisories_${city.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')}_${country.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')}";
         }
       } catch (_) {}
 
+      if (mounted) {
+        setState(() {}); // trigger rebuild for the bulletin board stream
+      }
+      
       loadWeatherAdvisory(lat: _lat, lon: _lon);
     } catch (_) {
       loadWeatherAdvisory();
@@ -97,8 +136,10 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
         .get();
 
     if (doc.exists) {
+      if (!mounted) return;
       setState(() {
         userRole = (doc.data()?['role'] ?? 'user').toString();
+        accountType = (doc.data()?['accountType'] ?? 'farmer').toString().toLowerCase();
       });
     }
   }
@@ -107,6 +148,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
     try {
       final data = await WeatherService.fetchWeatherAdvisory(lat: lat, lon: lon);
 
+      if (!mounted) return;
       setState(() {
         temperature = (data["weather"]["temperature"] as num).toDouble();
         rainProbability =
@@ -180,15 +222,17 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
 
       _controller.clear();
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Advisory sent successfully 🚀")),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to send advisory: $e")),
       );
     } finally {
-      setState(() => _isSending = false);
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -232,6 +276,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
       final draft = data["result"] ?? data["advisoryDraft"] ?? "";
       
       if (draft.isNotEmpty) {
+        if (!mounted) return;
         setState(() {
           _controller.text = draft;
         });
@@ -243,11 +288,12 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
       }
       
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to generate AI draft: $e")),
       );
     } finally {
-      setState(() => _isGeneratingAI = false);
+      if (mounted) setState(() => _isGeneratingAI = false);
     }
   }
 
@@ -291,7 +337,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.45),
+                  color: Colors.white.withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(getWeatherIcon(), size: 34, color: Colors.black87),
@@ -360,7 +406,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.55),
+              color: Colors.white.withValues(alpha: 0.55),
               borderRadius: BorderRadius.circular(18),
             ),
             child: Row(
@@ -386,7 +432,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              onPressed: loadWeatherAdvisory,
+              onPressed: () => loadWeatherAdvisory(lat: _lat, lon: _lon),
               icon: const Icon(Icons.refresh_rounded, color: Colors.black87),
               label: const Text("Refresh", style: TextStyle(color: Colors.black87)),
             ),
@@ -404,7 +450,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.55),
+        color: Colors.white.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -472,23 +518,14 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
                 ),
               ),
               const SizedBox(width: 8),
+              const SizedBox(width: 8),
               if (_isGeneratingAI)
                 const SizedBox(
                   width: 20, 
                   height: 20, 
                   child: CircularProgressIndicator(strokeWidth: 2)
                 )
-              else
-                TextButton.icon(
-                  onPressed: generateAIDraft,
-                  icon: const Icon(Icons.auto_awesome, color: Colors.purple, size: 20),
-                  label: Text("AI Assist", style: TextStyle(color: Colors.purple[700])),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
+              // AI Assist button removed as requested
             ],
           ),
           const SizedBox(height: 8),
@@ -586,7 +623,17 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final docs = snapshot.data?.docs ?? [];
+              final allDocs = snapshot.data?.docs ?? [];
+
+              final docs = allDocs.where((doc) {
+                final data = Map<String, dynamic>.from(doc.data() as Map);
+                final source = data['source']?.toString();
+                final topic = data['topic']?.toString();
+
+                if (source == 'manual') return true;
+                if (_currentTopicName.isNotEmpty && topic == _currentTopicName) return true;
+                return false;
+              }).toList();
 
               if (docs.isEmpty) {
                 return Text(
@@ -656,7 +703,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const AdvisoryArchiveScreen(),
+                    builder: (context) => AdvisoryArchiveScreen(currentTopicName: _currentTopicName),
                   ),
                 );
               },
@@ -686,6 +733,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           flexibleSpace: const AppGradient(),
+          automaticallyImplyLeading: false,
           elevation: 2,
           title: Text(
             "Farming Advisory",
@@ -698,7 +746,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
           child: Column(
             children: [
               const SizedBox(height: 24),
-              buildWeatherSection(),
+              if (accountType == 'farmer' || isAdmin) buildWeatherSection(),
               const SizedBox(height: 20),
               if (isAdmin) buildAdminSenderSection(),
               if (!isAdmin) buildBulletinBoard(),

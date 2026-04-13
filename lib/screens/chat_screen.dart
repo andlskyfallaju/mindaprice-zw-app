@@ -3,12 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/cloudinary_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../widgets/app_gradient.dart';
 import '../services/wallpaper_service.dart';
 import '../widgets/chat_wallpaper_picker.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
+import '../widgets/chat_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
   final String otherUserId;
@@ -30,6 +35,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   WallpaperType _wallpaperType = WallpaperType.none;
   dynamic _wallpaperValue;
+  bool isOffline = false;
+  bool _isUploading = false;
+  StreamSubscription? _connectivitySubscription;
 
   String getConversationId(String uid1, String uid2) {
     final ids = [uid1, uid2]..sort();
@@ -43,6 +51,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _updatePresence(true);
     markMessagesAsRead();
     _loadWallpaper();
+    _initConnectivity();
+  }
+
+  void _initConnectivity() {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (!mounted) return;
+      setState(() {
+        isOffline = results.contains(ConnectivityResult.none) || results.isEmpty;
+      });
+    });
   }
 
   @override
@@ -50,6 +68,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _updatePresence(false);
     _messageController.dispose();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -64,7 +83,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _loadWallpaper() async {
     try {
-      final wp = await WallpaperService.getWallpaper();
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+      final conversationId = getConversationId(currentUser.uid, widget.otherUserId);
+      
+      final wp = await WallpaperService.getWallpaper(chatId: conversationId);
       if (mounted) {
         setState(() {
           _wallpaperType = wp['type'];
@@ -101,7 +124,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           .doc(conversationId)
           .set({
         'participants': [currentUser.uid, widget.otherUserId],
-        'unreadCounts.${currentUser.uid}': 0,
+        'unreadCounts': { currentUser.uid: 0 },
       }, SetOptions(merge: true));
 
       // Update individual messages sent by the other user to 'read'
@@ -132,6 +155,70 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _deleteMessage(String messageId, bool forEveryone) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final conversationId = getConversationId(currentUser.uid, widget.otherUserId);
+    final docRef = FirebaseFirestore.instance
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId);
+
+    if (forEveryone) {
+      await docRef.update({
+        'text': '🚫 This message was deleted',
+        'isDeleted': true,
+      });
+    } else {
+      await docRef.update({
+        'deletedFor': FieldValue.arrayUnion([currentUser.uid]),
+      });
+    }
+  }
+
+  Future<void> _clearConversation() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Clear Chat?"),
+        content: const Text("This will remove all messages from your view."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Clear", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final conversationId = getConversationId(currentUser.uid, widget.otherUserId);
+    final messages = await FirebaseFirestore.instance
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .get();
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (var doc in messages.docs) {
+      batch.update(doc.reference, {
+        'deletedFor': FieldValue.arrayUnion([currentUser.uid]),
+      });
+    }
+    await batch.commit();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Conversation cleared")),
+    );
+  }
+
   Future<String> getMyUsername() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return "New message";
@@ -144,31 +231,66 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return (doc.data()?['username'] ?? "New message").toString();
   }
 
+  Future<void> _pickAndSendImage() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    if (picked == null) return;
+
+    setState(() => _isUploading = true);
+
+    try {
+      final conversationId = getConversationId(currentUser.uid, widget.otherUserId);
+      final downloadUrl = await CloudinaryService.uploadChatImage(picked.path, conversationId);
+
+      if (downloadUrl == null) throw Exception('Cloudinary upload failed.');
+
+      await _sendMessagePayload(currentUser, conversationId, '', imageUrl: downloadUrl);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send image: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
   Future<void> sendMessage() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
+    _messageController.clear();
 
     final conversationId = getConversationId(currentUser.uid, widget.otherUserId);
+    await _sendMessagePayload(currentUser, conversationId, text);
+  }
 
+  Future<void> _sendMessagePayload(User currentUser, String conversationId, String text, {String? imageUrl}) async {
     final conversationRef = FirebaseFirestore.instance
         .collection('conversations')
         .doc(conversationId);
 
     final messageRef = conversationRef.collection('messages').doc();
-
     final batch = FirebaseFirestore.instance.batch();
+
+    final lastMessagePreview = imageUrl != null ? '📷 Photo' : text;
 
     batch.set(
       conversationRef,
       {
         'participants': [currentUser.uid, widget.otherUserId],
-        'lastMessage': text,
+        'lastMessage': lastMessagePreview,
         'lastUpdated': FieldValue.serverTimestamp(),
-        'unreadCounts.${widget.otherUserId}': FieldValue.increment(1),
-        'unreadCounts.${currentUser.uid}': 0,
+        'unreadCounts': {
+          widget.otherUserId: FieldValue.increment(1),
+          currentUser.uid: 0,
+        },
       },
       SetOptions(merge: true),
     );
@@ -176,16 +298,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     batch.set(messageRef, {
       'senderId': currentUser.uid,
       'text': text,
-      'sentAt': FieldValue.serverTimestamp(),
+      'imageUrl': ?imageUrl,
+      'sentAt': Timestamp.now(),
       'status': 'sent',
       'isRead': false,
     });
 
-    _messageController.clear();
-    await batch.commit();
+    try {
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Error sending message: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send: $e')),
+        );
+      }
+      return;
+    }
 
     final myUsername = await getMyUsername();
-
     try {
       await http.post(
         Uri.parse("$baseUrl/messages/notify"),
@@ -194,7 +325,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           "recipientUid": widget.otherUserId,
           "senderUid": currentUser.uid,
           "senderName": myUsername,
-          "message": text,
+          "message": lastMessagePreview,
         }),
       );
     } catch (_) {}
@@ -225,7 +356,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return const Scaffold(body: Center(child: Text("Not logged in")));
     }
 
-    final conversationId = getConversationId(currentUser.uid, widget.otherUserId);
+    final conversationId =
+        getConversationId(currentUser.uid, widget.otherUserId);
 
     return Scaffold(
       appBar: AppBar(
@@ -240,7 +372,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               onPressed: () => Navigator.pop(context),
             ),
             StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance.collection('users').doc(widget.otherUserId).snapshots(),
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(widget.otherUserId)
+                  .snapshots(),
               builder: (context, snapshot) {
                 String? pUrl;
                 if (snapshot.hasData && snapshot.data!.exists) {
@@ -268,13 +403,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
             ),
             StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance.collection('users').doc(widget.otherUserId).snapshots(),
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(widget.otherUserId)
+                  .snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox();
+                if (!snapshot.hasData || !snapshot.data!.exists) {
+                  return const SizedBox();
+                }
                 final userData = snapshot.data!.data() as Map<String, dynamic>;
                 final activeChatId = userData['activeChatId'] as String?;
                 final isOnline = activeChatId == conversationId;
-                
+
                 return Text(
                   isOnline ? "online" : "offline",
                   style: const TextStyle(fontSize: 12, color: Colors.white70),
@@ -286,14 +426,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.white),
-            onSelected: (value) {
-              if (value == 'wallpaper') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ChatWallpaperPicker()),
-                ).then((_) => _loadWallpaper());
-              }
-            },
             itemBuilder: (context) => [
               const PopupMenuItem(
                 value: 'wallpaper',
@@ -305,66 +437,173 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+              const PopupMenuItem(
+                value: 'clear',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_sweep_outlined, color: Colors.black54),
+                    SizedBox(width: 8),
+                    Text("Clear Chat"),
+                  ],
+                ),
+              ),
             ],
+            onSelected: (value) {
+              if (value == 'wallpaper') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ChatWallpaperPicker(
+                      chatId: conversationId,
+                      chatName: widget.otherUsername,
+                    ),
+                  ),
+                ).then((_) => _loadWallpaper());
+              } else if (value == 'clear') {
+                _clearConversation();
+              }
+            },
           ),
         ],
       ),
-      body: Container(
-        decoration: _buildWallpaperDecoration(),
-        child: Column(
-          children: [
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('conversations')
-                    .doc(conversationId)
-                    .collection('messages')
-                    .orderBy('sentAt', descending: true)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    markMessagesAsRead();
-                  });
-
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  final messages = snapshot.data?.docs ?? [];
-
-                  if (messages.isEmpty) {
-                    return const Center(child: Text("Say hello!"));
-                  }
-
-                  return ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      final isMe = msg['senderId'] == currentUser.uid;
-                      final text = msg['text'] ?? '';
-                      final timestamp = msg['sentAt'] as Timestamp?;
-                      final status = msg.data().toString().contains('status') 
-                          ? msg['status'] as String 
-                          : 'sent';
-                      
-                      final time = timestamp != null
-                          ? DateFormat('jm').format(timestamp.toDate())
-                          : "";
-
-                      return ChatBubble(
-                        message: text,
-                        isMe: isMe,
-                        time: time,
-                        status: status,
-                      );
-                    },
-                  );
-                },
+      body: Column(
+        children: [
+          if (isOffline)
+            Container(
+              width: double.infinity,
+              color: Colors.orange.shade700,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: const Text(
+                "Waiting for network...",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold),
               ),
             ),
-            _buildMessageInput(),
+          Expanded(
+            child: Container(
+              decoration: _buildWallpaperDecoration(),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('conversations')
+                          .doc(conversationId)
+                          .collection('messages')
+                          .orderBy('sentAt', descending: true)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          markMessagesAsRead();
+                        });
+
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+
+                        final allMessages = snapshot.data?.docs ?? [];
+                        final isFromCache = snapshot.data?.metadata.isFromCache ?? false;
+
+                        // Filter out messages deleted for ME
+                        final messages = allMessages.where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final deletedFor = data['deletedFor'] as List?;
+                          return deletedFor == null || !deletedFor.contains(currentUser.uid);
+                        }).toList();
+
+                        if (messages.isEmpty) {
+                          return const Center(child: Text("Say hello!"));
+                        }
+
+                        return Column(
+                          children: [
+                            if (isFromCache && !isOffline)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 4),
+                                child: Text(
+                                  "Syncing messages...",
+                                  style: TextStyle(fontSize: 10, color: Colors.grey),
+                                ),
+                              ),
+                            Expanded(
+                              child: ListView.builder(
+                                reverse: true,
+                                padding: const EdgeInsets.all(12),
+                                itemCount: messages.length,
+                                itemBuilder: (context, index) {
+                                  final msg = messages[index];
+                                  final data = msg.data() as Map<String, dynamic>;
+                                  final isMe = data['senderId'] == currentUser.uid;
+                                  final text = data['text'] ?? '';
+                                  final timestamp = (data['sentAt'] ?? data['createdAt']) as Timestamp?;
+                                  String status = data['status'] ?? 'sent';
+                                  
+                                  // If message is from cache and we sent it, mark as 'pending'
+                                  if (isMe && msg.metadata.hasPendingWrites) {
+                                    status = 'pending';
+                                  }
+
+                                  final time = timestamp != null
+                                      ? DateFormat('jm').format(timestamp.toDate())
+                                      : "";
+
+                                  return GestureDetector(
+                                    onLongPress: () => _showDeleteOptions(msg.id, isMe),
+                                    child: ChatBubble(
+                                      message: text,
+                                      isMe: isMe,
+                                      time: time,
+                                      status: status,
+                                      isDeleted: data['isDeleted'] == true,
+                                      imageUrl: data['imageUrl'] as String?,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  _buildMessageInput(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteOptions(String messageId, bool isMe) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text("Delete for me"),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteMessage(messageId, false);
+              },
+            ),
+            if (isMe)
+              ListTile(
+                leading: const Icon(Icons.delete_forever),
+                title: const Text("Delete for everyone"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _deleteMessage(messageId, true);
+                },
+              ),
           ],
         ),
       ),
@@ -372,166 +611,67 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildMessageInput() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF2C2C2C)
-                : Colors.white,
-            borderRadius: BorderRadius.circular(25),
-          ),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey),
-                    onPressed: () {},
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      decoration: const InputDecoration(
-                        hintText: "Type a message",
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.attach_file, color: Colors.grey),
-                    onPressed: () {},
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.camera_alt, color: Colors.grey),
-                    onPressed: () {},
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 5),
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: Colors.green[800],
-            child: IconButton(
-              icon: const Icon(Icons.send, color: Colors.white),
-              onPressed: sendMessage,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class ChatBubble extends StatelessWidget {
-  final String message;
-  final bool isMe;
-  final String time;
-  final String status;
-
-  const ChatBubble({
-    super.key,
-    required this.message,
-    required this.isMe,
-    required this.time,
-    required this.status,
-  });
-
-  @override
-  Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    Color bubbleColor = isMe 
-      ? (isDark ? const Color(0xFF005C4B) : const Color(0xFFDCF8C6)) 
-      : (isDark ? const Color(0xFF202C33) : Colors.white);
-
-    if (isMe) {
-      if (status == 'failed') {
-        bubbleColor = isDark ? Colors.red[900]! : Colors.red[100]!;
-      } else if (status == 'read') {
-        bubbleColor = isDark ? const Color(0xFF005C4B) : Colors.green[100]!;
-      } else if (status == 'sent') {
-        bubbleColor = isDark ? const Color(0xFF1A3A5C) : Colors.blue[100]!;
-      }
-    }
-
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.8,
-        ),
-        decoration: BoxDecoration(
-          color: bubbleColor,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(0),
-            bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(16),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_isUploading)
+          LinearProgressIndicator(
+            backgroundColor: Colors.grey[300],
+            color: Colors.green[700],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              message,
-              style: TextStyle(
-                fontSize: 16,
-                color: status == 'failed' 
-                  ? (isDark ? Colors.red[200] : Colors.red[900]) 
-                  : (isDark ? Colors.white : Colors.black87),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  time,
-                  style: TextStyle(
-                    fontSize: 10, 
-                    color: isDark ? Colors.white60 : Colors.black54
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          color: isDark ? const Color(0xFF1B1B1B) : Colors.grey[100],
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF2C2C2C) : Colors.white,
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey),
+                        onPressed: () {},
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _messageController,
+                          decoration: const InputDecoration(
+                            hintText: "Type a message",
+                            border: InputBorder.none,
+                          ),
+                          onSubmitted: (_) => sendMessage(),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.attach_file, color: Colors.grey),
+                        onPressed: _isUploading ? null : _pickAndSendImage,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.camera_alt, color: Colors.grey),
+                        onPressed: _isUploading ? null : _pickAndSendImage,
+                      ),
+                    ],
                   ),
                 ),
-                if (isMe) ...[
-                  const SizedBox(width: 4),
-                  _buildStatusIcon(isDark),
-                ],
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(width: 5),
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: Colors.green[800],
+                child: IconButton(
+                  icon: const Icon(Icons.send, color: Colors.white),
+                  onPressed: sendMessage,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
-  }
-
-  Widget _buildStatusIcon(bool isDark) {
-    IconData iconData = Icons.done;
-    Color iconColor = isDark ? Colors.white60 : Colors.black54;
-
-    if (status == 'read') {
-      iconData = Icons.done_all;
-      iconColor = isDark ? Colors.greenAccent : Colors.blue;
-    } else if (status == 'sent') {
-      iconData = Icons.done;
-    } else if (status == 'failed') {
-      iconData = Icons.error_outline;
-      iconColor = isDark ? Colors.redAccent : Colors.red;
-    }
-
-    return Icon(iconData, size: 14, color: iconColor);
   }
 }

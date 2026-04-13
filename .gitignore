@@ -43,3 +43,25 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Sensitive / Environment files
+.env
+.env.*
+
+# Assistant / AI Logs
+.antigravity/
+.gemini/
+analyze_output.txt
+keytool_output.txt
+
+# Android signing
+/android/key.properties
+**/*.jks
+**/*.keystore
+
+# iOS sensitive
+ios/Runner/GoogleService-Info.plist
+ios/Flutter/AppFrameworkInfo.plist
+
+# Mac thumbnails
+.DS_Store

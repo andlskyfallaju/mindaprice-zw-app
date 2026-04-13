@@ -9,6 +9,7 @@ class RecentAccountsService {
     required String email,
     required String username,
     String photoUrl = '',
+    String authProvider = 'email',
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final existing = prefs.getStringList(_key) ?? [];
@@ -18,6 +19,7 @@ class RecentAccountsService {
       'email': email,
       'username': username,
       'photoUrl': photoUrl,
+      'authProvider': authProvider,
     });
 
     final filtered = existing.where((item) {

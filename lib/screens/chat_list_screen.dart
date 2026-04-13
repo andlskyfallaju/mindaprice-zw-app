@@ -28,6 +28,7 @@ class ChatListScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
         flexibleSpace: const AppGradient(),
+        automaticallyImplyLeading: false,
         elevation: 2,
         title: Text(
           "MindaPrice Chat",
@@ -97,7 +98,7 @@ class ChatListScreen extends StatelessWidget {
 
                 return ListView.separated(
                   itemCount: contacts.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 80),
+                  separatorBuilder: (context, index) => const Divider(height: 1, indent: 80),
                   itemBuilder: (context, index) {
                     final contact = contacts[index];
                     final username = contact['username'] ?? 'Unknown User';

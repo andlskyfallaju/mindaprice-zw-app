@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import '../services/recent_accounts_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/app_background.dart';
@@ -22,6 +24,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   bool _isLoading = false;
   bool _obscurePassword = true;
+  String _accountType = 'Farmer'; // Default value
 
   // -------------------- Firebase Auth Error Mapping --------------------
   String getFirebaseAuthError(FirebaseAuthException e) {
@@ -80,10 +83,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
         'username': _usernameController.text.trim(),
         'email': _emailController.text.trim(),
         'uid': userCred.user!.uid,
+        'accountType': _accountType.toLowerCase(), // 'farmer' or 'buyer'
+        'role': 'user',
+        'createdAt': FieldValue.serverTimestamp(),
       });
 
       // Send verification email
       await userCred.user!.sendEmailVerification();
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
@@ -92,14 +100,112 @@ class _SignUpScreenState extends State<SignUpScreen> {
       // Navigate to login screen
       Navigator.pushReplacementNamed(context, '/login');
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(getFirebaseAuthError(e))));
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Registration failed: $e')));
       debugPrint('Sign-up error: $e');
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> signInWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      await GoogleSignIn.instance.initialize();
+      final GoogleSignInAccount googleUser = await GoogleSignIn.instance.authenticate();
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+      );
+
+      final UserCredential userCred = await _auth.signInWithCredential(credential);
+      final User? user = userCred.user;
+      if (user == null) throw Exception("Failed to sign in with Google.");
+
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      
+      if (!doc.exists) {
+        String actType = 'farmer';
+        
+        if (mounted) {
+          final selectedType = await showDialog<String>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) {
+              return AlertDialog(
+                title: Text("Welcome to MindaPrice!", style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Are you joining us as a Farmer or a Product Buyer?", style: GoogleFonts.montserrat(fontSize: 14)),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context, 'farmer'),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700], foregroundColor: Colors.white),
+                        child: const Text("I am a Farmer"),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context, 'buyer'),
+                        child: const Text("I am a Buyer"),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+          );
+          if (selectedType != null) {
+            actType = selectedType;
+          }
+        }
+
+        await _firestore.collection('users').doc(user.uid).set({
+          'username': user.displayName ?? 'New User',
+          'email': user.email,
+          'uid': user.uid,
+          'accountType': actType,
+          'role': 'user',
+          'photoUrl': user.photoURL ?? '',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      final username = user.displayName ?? 'Google User';
+      final photoUrl = user.photoURL ?? '';
+      await RecentAccountsService.saveAccount(
+        uid: user.uid,
+        email: user.email ?? '',
+        username: username,
+        photoUrl: photoUrl,
+        authProvider: 'google',
+      );
+      
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/home');
+
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(getFirebaseAuthError(e))));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Google Sign-In failed: $e')));
+      }
+      debugPrint('Google Sign-In Error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -161,12 +267,62 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 15),
+
+            // Account Type Dropdown
+            DropdownButtonFormField<String>(
+              initialValue: _accountType,
+              decoration: InputDecoration(
+                labelText: 'I am a...',
+                filled: true,
+                fillColor: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.grey[800]
+                    : Colors.transparent,
+              ),
+              items: ['Farmer', 'Product Buyer'].map((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value, style: GoogleFonts.montserrat()),
+                );
+              }).toList(),
+              onChanged: (newValue) {
+                setState(() {
+                  _accountType = newValue!;
+                });
+              },
+            ),
             const SizedBox(height: 30),
 
             // Sign Up Button
             _isLoading
                 ? const CircularProgressIndicator()
-                : ElevatedButton(onPressed: signUp, child: const Text('Sign Up')),
+                : SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: signUp,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      ),
+                      child: const Text('Sign Up')
+                    )
+                  ),
+            const SizedBox(height: 16),
+            _isLoading
+                ? const SizedBox.shrink()
+                : SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: signInWithGoogle,
+                      icon: const Icon(Icons.account_circle, color: Colors.blueAccent),
+                      label: Text('Continue with Google', style: GoogleFonts.montserrat(fontWeight: FontWeight.w600, color: Colors.black87)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        backgroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
 
             const SizedBox(height: 20),
 

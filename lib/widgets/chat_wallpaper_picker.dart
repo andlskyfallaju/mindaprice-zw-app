@@ -6,7 +6,14 @@ import '../services/wallpaper_service.dart';
 import '../widgets/app_gradient.dart';
 
 class ChatWallpaperPicker extends StatefulWidget {
-  const ChatWallpaperPicker({super.key});
+  final String? chatId;
+  final String? chatName;
+
+  const ChatWallpaperPicker({
+    super.key, 
+    this.chatId,
+    this.chatName,
+  });
 
   @override
   State<ChatWallpaperPicker> createState() => _ChatWallpaperPickerState();
@@ -33,13 +40,16 @@ class _ChatWallpaperPickerState extends State<ChatWallpaperPicker> {
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     
     if (pickedFile != null) {
-      await WallpaperService.setWallpaperImage(File(pickedFile.path));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Chat wallpaper updated!')),
-        );
-        Navigator.pop(context);
-      }
+      await WallpaperService.setWallpaperImage(
+        File(pickedFile.path),
+        chatId: widget.chatId,
+      );
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chat wallpaper updated!')),
+      );
+      Navigator.pop(context);
     }
   }
 
@@ -51,8 +61,8 @@ class _ChatWallpaperPickerState extends State<ChatWallpaperPicker> {
         elevation: 2,
         foregroundColor: Colors.black87,
         title: Text(
-          "Chat Wallpaper",
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+          widget.chatName != null ? "Wallpaper: ${widget.chatName}" : "Chat Wallpaper",
+          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold, fontSize: 18),
         ),
       ),
       body: SingleChildScrollView(
@@ -72,13 +82,16 @@ class _ChatWallpaperPickerState extends State<ChatWallpaperPicker> {
               title: "Reset to Default",
               subtitle: "Back to the standard background",
               onTap: () async {
-                await WallpaperService.resetWallpaper();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Wallpaper reset to default.')),
-                  );
-                  Navigator.pop(context);
-                }
+                final messenger = ScaffoldMessenger.of(context);
+                final navigator = Navigator.of(context);
+                
+                await WallpaperService.resetWallpaper(chatId: widget.chatId);
+                
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Wallpaper reset to default.')),
+                );
+                navigator.pop();
               },
             ),
             const SizedBox(height: 30),
@@ -104,13 +117,16 @@ class _ChatWallpaperPickerState extends State<ChatWallpaperPicker> {
                 final color = _solidColors[index];
                 return GestureDetector(
                   onTap: () async {
-                    await WallpaperService.setWallpaperColor(color);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Wallpaper color updated!')),
-                      );
-                      Navigator.pop(context);
-                    }
+                    final messenger = ScaffoldMessenger.of(context);
+                    final navigator = Navigator.of(context);
+                    
+                    await WallpaperService.setWallpaperColor(color, chatId: widget.chatId);
+                    
+                    if (!mounted) return;
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('Wallpaper color updated!')),
+                    );
+                    navigator.pop();
                   },
                   child: Container(
                     decoration: BoxDecoration(
@@ -119,7 +135,7 @@ class _ChatWallpaperPickerState extends State<ChatWallpaperPicker> {
                       border: Border.all(color: Colors.black12),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),
@@ -147,14 +163,14 @@ class _ChatWallpaperPickerState extends State<ChatWallpaperPicker> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.7),
+          color: Colors.white.withValues(alpha: 0.7),
           borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.black.withOpacity(0.05)),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
         ),
         child: Row(
           children: [
             CircleAvatar(
-              backgroundColor: Colors.green.withOpacity(0.1),
+              backgroundColor: Colors.green.withValues(alpha: 0.1),
               child: Icon(icon, color: Colors.green),
             ),
             const SizedBox(width: 16),
@@ -173,13 +189,13 @@ class _ChatWallpaperPickerState extends State<ChatWallpaperPicker> {
                     subtitle,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.black.withOpacity(0.3)),
+            Icon(Icons.chevron_right, color: Colors.black.withValues(alpha: 0.3)),
           ],
         ),
       ),

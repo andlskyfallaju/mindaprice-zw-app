@@ -1,0 +1,105 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    // Logic: Is the user logged in?
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Logic: Is the user the owner of the document?
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Logic: Is the user an admin?
+    function isAdmin() {
+      // Use exists() check to avoid errors if user doc isn't created yet
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // --- USERS COLLECTION ---
+    match /users/{userId} {
+      // Allowed to read basic profile info for search/ratings
+      allow get, list: if isSignedIn();
+      
+      // Only owner can write to their own profile
+      allow create: if isSignedIn() && isOwner(userId) && !(request.resource.data.keys().hasAny(['role']));
+      allow update: if isSignedIn() && isOwner(userId) && !(request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
+      
+      // ADMINS can edit anything
+      allow write: if isAdmin();
+
+      // CONTACTS SUBCOLLECTION
+      match /contacts/{contactId} {
+        allow get, list, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // --- CONVERSATIONS ---
+    match /conversations/{conversationId} {
+      // Participants can read and list their own conversations
+      allow get, list: if isSignedIn() && request.auth.uid in resource.data.participants;
+      
+      // Allow creation if the creator is one of the participants
+      allow create: if isSignedIn() && request.auth.uid in request.resource.data.participants;
+      
+      // Allow updates (lastMessage, unreadCounts) if user is participant
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+
+      match /messages/{messageId} {
+         allow read, write: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+      }
+    }
+
+    // --- CHAT REQUESTS ---
+    match /chat_requests/{requestId} {
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.fromUid;
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+      allow delete: if isSignedIn() && (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+    }
+
+    // --- RATINGS ---
+    match /ratings/{ratingId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.fromUid;
+      allow update, delete: if isAdmin();
+    }
+
+    // --- ADVISORIES (Broadcasts) ---
+    match /advisories/{advisoryId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // --- ACTIVE REGIONS (Background tracking) ---
+    match /active_regions/{topicId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || (isSignedIn() && request.auth.uid != null);
+    }
+
+    // --- CONFIG (Version checks etc) ---
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // --- AI FARMER CHATS (Minda Advisor) ---
+    match /ai_farmer_chats/{userId} {
+      allow read, write: if isSignedIn() && isOwner(userId);
+      
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+    }
+
+    // --- MARKET PRICES (Official/Admin prices) ---
+    match /market_prices/{priceId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

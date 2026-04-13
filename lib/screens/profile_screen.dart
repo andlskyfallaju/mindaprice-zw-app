@@ -19,6 +19,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String email = '';
   String? photoUrl;
   String role = 'user';
+  String accountType = 'farmer';
+  String farmProfile = '';
+  String preferredLanguage = 'English';
   bool isLoading = true;
   bool isUpdating = false;
 
@@ -49,6 +52,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         email = (data['email'] ?? user.email ?? '').toString();
         photoUrl = data['photoUrl'] as String?;
         role = (data['role'] ?? 'user').toString();
+        accountType = (data['accountType'] ?? 'farmer').toString();
+        farmProfile = (data['farmProfile'] ?? '').toString();
+        preferredLanguage = (data['preferredLanguage'] ?? 'English').toString();
         isLoading = false;
       });
     } catch (_) {
@@ -72,7 +78,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
         boxShadow: const [
           BoxShadow(
@@ -94,7 +100,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title,
                   style: GoogleFonts.montserrat(
                     fontSize: 12,
-                    color: Colors.black54,
+                    color: Colors.grey[600],
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -103,7 +109,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: GoogleFonts.montserrat(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black87,
                   ),
                 ),
               ],
@@ -149,12 +154,125 @@ class _ProfileScreenState extends State<ProfileScreen> {
           await FirebaseFirestore.instance.collection('users').doc(uid).update({
             'username': newName,
           });
+          if (!mounted) return;
           setState(() => username = newName);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Username updated!")),
           );
         }
       } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to update: $e")),
+        );
+      } finally {
+        setState(() => isUpdating = false);
+      }
+    }
+  }
+
+  Future<void> _updateFarmProfile() async {
+    final TextEditingController controller = TextEditingController(text: farmProfile);
+    
+    final newProfile = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Farm Details", style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: controller,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              hintText: "Describe your crops, livestock, acreage, etc.",
+              border: OutlineInputBorder(),
+            ),
+            autofocus: true,
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+
+    if (newProfile != null && newProfile != farmProfile) {
+      setState(() => isUpdating = true);
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          await FirebaseFirestore.instance.collection('users').doc(uid).update({
+            'farmProfile': newProfile,
+          });
+          if (!mounted) return;
+          setState(() => farmProfile = newProfile);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Farm details updated!")),
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to update: $e")),
+        );
+      } finally {
+        setState(() => isUpdating = false);
+      }
+    }
+  }
+
+  Future<void> _updateLanguage() async {
+    String? newLang = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        String selectedLang = preferredLanguage;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text("Select Language", style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+              content: DropdownButton<String>(
+                value: selectedLang,
+                isExpanded: true,
+                items: ['English', 'Shona', 'Ndebele'].map((lang) {
+                  return DropdownMenuItem(value: lang, child: Text(lang));
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => selectedLang = val);
+                },
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, selectedLang),
+                  child: const Text("Save"),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
+
+    if (newLang != null && newLang != preferredLanguage) {
+      setState(() => isUpdating = true);
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          await FirebaseFirestore.instance.collection('users').doc(uid).update({
+            'preferredLanguage': newLang,
+          });
+          if (!mounted) return;
+          setState(() => preferredLanguage = newLang);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Language updated!")),
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Failed to update: $e")),
         );
@@ -190,11 +308,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'photoUrl': url,
       });
 
+      if (!mounted) return;
       setState(() => photoUrl = url);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Profile picture updated!")),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to upload image: $e")),
       );
@@ -300,6 +420,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.verified_user_outlined,
                     title: 'Account Role',
                     value: role.toUpperCase(),
+                  ),
+                  buildInfoCard(
+                    icon: Icons.badge_outlined,
+                    title: 'I am a...',
+                    value: accountType.toUpperCase(),
+                  ),
+                  if (accountType.toLowerCase() == 'farmer')
+                    buildInfoCard(
+                      icon: Icons.agriculture_outlined,
+                      title: 'Farm Details',
+                      value: farmProfile.isNotEmpty ? farmProfile : 'Not set (tap to describe your farm)',
+                      onEdit: _updateFarmProfile,
+                    ),
+                  buildInfoCard(
+                    icon: Icons.language_outlined,
+                    title: 'Preferred Language',
+                    value: preferredLanguage,
+                    onEdit: _updateLanguage,
                   ),
                   ],
                 ),

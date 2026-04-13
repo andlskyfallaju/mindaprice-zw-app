@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_background.dart';
 import '../widgets/app_gradient.dart';
-import '../services/fcm_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -18,6 +17,7 @@ class PriceScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           flexibleSpace: const AppGradient(),
+          automaticallyImplyLeading: false,
           elevation: 2,
           foregroundColor: Colors.black87,
           title: Text(

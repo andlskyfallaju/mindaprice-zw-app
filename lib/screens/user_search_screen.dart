@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../widgets/app_background.dart';
 import '../widgets/app_gradient.dart';
 import '../services/chat_service.dart';
+import '../widgets/rating_widgets.dart';
+
 
 class UserSearchScreen extends StatefulWidget {
   const UserSearchScreen({super.key});
@@ -97,26 +99,38 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
                   final fromUsername = req['fromUsername'] ?? 'Unknown';
                   final fromUid = req['fromUid'];
 
-                  return ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.person)),
-                    title: Text(fromUsername),
-                    subtitle: const Text("Sent you a chat request"),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.check, color: Colors.green),
-                          onPressed: () => _chatService.acceptChatRequest(
-                            fromUid,
-                            fromUsername,
-                          ),
+                  return StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance.collection('users').doc(fromUid).snapshots(),
+                    builder: (context, userSnap) {
+                      String? pUrl;
+                      if (userSnap.hasData && userSnap.data!.exists) {
+                        pUrl = (userSnap.data!.data() as Map<String, dynamic>)['photoUrl'] as String?;
+                      }
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundImage: pUrl != null ? NetworkImage(pUrl) : null,
+                          child: pUrl == null ? const Icon(Icons.person) : null,
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.red),
-                          onPressed: () => _chatService.declineChatRequest(fromUid),
+                        title: Text(fromUsername),
+                        subtitle: const Text("Sent you a chat request"),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.check, color: Colors.green),
+                              onPressed: () => _chatService.acceptChatRequest(
+                                fromUid,
+                                fromUsername,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.red),
+                              onPressed: () => _chatService.declineChatRequest(fromUid),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   );
                 },
               );
@@ -148,24 +162,48 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
           itemBuilder: (context, index) {
             final user = users[index];
             final username = user['username'] ?? 'Unknown';
+            final photoUrl = (user.data() as Map<String, dynamic>)['photoUrl'] as String?;
+            final ratingAvg = ((user.data() as Map<String, dynamic>)['ratingAverage'] ?? 0.0) as num;
+            final ratingCount = ((user.data() as Map<String, dynamic>)['ratingCount'] ?? 0) as int;
 
             return ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.person)),
+              leading: CircleAvatar(
+                backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
+                child: photoUrl == null ? const Icon(Icons.person) : null,
+              ),
               title: Text(username),
-              trailing: ElevatedButton(
-                onPressed: () async {
-                  await _chatService.sendChatRequest(user.id, username);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Chat request sent!")),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF128C7E),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+              subtitle: UserRatingBadge(
+                average: ratingAvg.toDouble(),
+                count: ratingCount,
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Rate $username',
+                    icon: const Icon(Icons.star_outline_rounded, color: Colors.amber),
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (_) => RatingDialog(toUid: user.id, toUsername: username),
+                    ),
                   ),
-                ),
-                child: const Text("Add"),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await _chatService.sendChatRequest(user.id, username);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Chat request sent!')),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF128C7E),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    child: const Text('Add'),
+                  ),
+                ],
               ),
             );
           },

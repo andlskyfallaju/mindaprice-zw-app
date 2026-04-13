@@ -17,6 +17,9 @@ import 'services/theme_service.dart';
 import 'screens/profile_screen.dart';
 import 'screens/notification_settings_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'services/cache_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -35,6 +38,9 @@ void handleNotificationPayload(Map data) {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
     if (senderId != null && senderId != currentUid && navigatorKey.currentState != null) {
+      // Clear stack and jump to Messenger tab, then push the specific chat
+      navigatorKey.currentState!.pushNamedAndRemoveUntil('/home', (route) => false, arguments: 1);
+      
       navigatorKey.currentState!.push(
         MaterialPageRoute(
           builder: (context) => ChatScreen(
@@ -46,10 +52,10 @@ void handleNotificationPayload(Map data) {
     }
   } else if (safeData['type'] == 'advisory') {
     if (navigatorKey.currentState != null) {
-      navigatorKey.currentState!.push(
-        MaterialPageRoute(
-          builder: (context) => const MainNavigationScreen(initialIndex: 2),
-        ),
+      navigatorKey.currentState!.pushNamedAndRemoveUntil(
+        '/home',
+        (route) => false,
+        arguments: 2, // initialIndex is handled in MainNavigationScreen if we pass it as arg, or we can just push with replacement
       );
     }
   }
@@ -69,6 +75,9 @@ void handleNotificationTapPayload(String? payload) {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  await CacheService.performMaintenance();
+  await dotenv.load(fileName: ".env");
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -77,6 +86,8 @@ void main() async {
   await NotificationService.init(
     onNotificationTap: handleNotificationTapPayload,
   );
+
+  await ThemeService.init();
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
