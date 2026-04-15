@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'home_screen.dart';
+import 'price_screen.dart';
 import 'chat_list_screen.dart';
 import 'advisory_screen.dart';
 import 'settings_screen.dart';
@@ -24,6 +25,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   final List<Widget> _pages = const [
     HomeScreen(),
+    PriceScreen(),
     ChatListScreen(),
     AdvisoryScreen(),
     SettingsScreen(),
@@ -87,6 +89,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       icon: Icon(Icons.home_outlined),
                       selectedIcon: Icon(Icons.home),
                       label: 'Home',
+                    ),
+                    const NavigationDestination(
+                      icon: Icon(Icons.storefront_outlined),
+                      selectedIcon: Icon(Icons.storefront),
+                      label: 'Market',
                     ),
                     NavigationDestination(
                       icon: unreadChats > 0

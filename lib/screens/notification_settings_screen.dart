@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/fcm_service.dart';
 import '../widgets/app_background.dart';
 import '../widgets/app_gradient.dart';
@@ -19,6 +21,7 @@ class _NotificationSettingsScreenState
   bool messengerNotifications = true;
   bool soundEnabled = true;
   bool vibrationEnabled = true;
+  bool reviewNotifications = true;
   bool isLoading = true;
 
   @override
@@ -37,8 +40,18 @@ class _NotificationSettingsScreenState
           prefs.getBool('messenger_notifications') ?? true;
       soundEnabled = prefs.getBool('sound_enabled') ?? true;
       vibrationEnabled = prefs.getBool('vibration_enabled') ?? true;
+      reviewNotifications = prefs.getBool('review_notifications') ?? true;
       isLoading = false;
     });
+  }
+
+  Future<void> _syncReviewPreferenceToFirestore(bool value) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'reviewNotificationsEnabled': value,
+      });
+    }
   }
 
   Future<void> saveSetting(String key, bool value) async {
@@ -146,6 +159,17 @@ class _NotificationSettingsScreenState
                     onChanged: (value) {
                       setState(() => vibrationEnabled = value);
                       saveSetting('vibration_enabled', value);
+                    },
+                  ),
+                  buildSwitchTile(
+                    icon: Icons.star_outline_rounded,
+                    title: 'Marketplace Reviews',
+                    subtitle: 'Be notified when someone gives you a rating.',
+                    value: reviewNotifications,
+                    onChanged: (value) {
+                      setState(() => reviewNotifications = value);
+                      saveSetting('review_notifications', value);
+                      _syncReviewPreferenceToFirestore(value);
                     },
                   ),
                 ],

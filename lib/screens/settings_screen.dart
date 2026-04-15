@@ -177,7 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           flexibleSpace: const AppGradient(),
           automaticallyImplyLeading: false,
           elevation: 2,
-          foregroundColor: Colors.black87,
+          foregroundColor: Colors.white,
           title: Text(
             "Settings",
             style: GoogleFonts.montserrat(

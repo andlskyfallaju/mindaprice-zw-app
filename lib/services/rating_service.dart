@@ -1,8 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 
 class RatingService {
   static final _db = FirebaseFirestore.instance;
+  static const String _baseUrl = "https://mindaprice-backend.onrender.com";
 
   /// Submit a rating from the current user to [toUid].
   /// Returns true on success, false if they already rated this user.
@@ -39,6 +43,28 @@ class RatingService {
     });
 
     await batch.commit();
+
+    // Trigger backend notification (non-blocking)
+    try {
+      final fromDoc = await _db.collection('users').doc(user.uid).get();
+      final fromName = fromDoc.data()?['username'] ?? 'A buyer';
+      
+      final token = await user.getIdToken();
+      http.post(
+        Uri.parse("$_baseUrl/ratings/notify"),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $token",
+        },
+        body: jsonEncode({
+          "recipientUid": toUid,
+          "score": score,
+          "senderName": fromName,
+        }),
+      );
+    } catch (e) {
+      debugPrint("Rating notification failed: $e");
+    }
 
     // Update the cached average on the user's document (non-blocking)
     _recalculateAverage(toUid);

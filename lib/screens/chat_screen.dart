@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' as io;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -243,7 +244,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     try {
       final conversationId = getConversationId(currentUser.uid, widget.otherUserId);
-      final downloadUrl = await CloudinaryService.uploadChatImage(picked.path, conversationId);
+      final downloadUrl = await CloudinaryService.uploadChatImage(picked, conversationId);
 
       if (downloadUrl == null) throw Exception('Cloudinary upload failed.');
 
@@ -335,9 +336,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_wallpaperType == WallpaperType.color) {
       return BoxDecoration(color: _wallpaperValue as Color);
     } else if (_wallpaperType == WallpaperType.image) {
+      if (kIsWeb) {
+        return BoxDecoration(
+          image: DecorationImage(
+            image: NetworkImage((_wallpaperValue as io.File).path),
+            fit: BoxFit.cover,
+          ),
+        );
+      }
       return BoxDecoration(
         image: DecorationImage(
-          image: FileImage(_wallpaperValue as File),
+          image: FileImage(_wallpaperValue as io.File),
           fit: BoxFit.cover,
         ),
       );

@@ -1,7 +1,7 @@
 name: mindaprice_test
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.4
+version: 0.3.0
 
 environment:
   sdk: ^3.10.8
@@ -30,6 +30,9 @@ dependencies:
   hive_flutter: ^1.1.0
   connectivity_plus: ^6.0.3
   google_sign_in: ^7.2.0
+  url_launcher: ^6.3.2
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
 
 
 dev_dependencies:

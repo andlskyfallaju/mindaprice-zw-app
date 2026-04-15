@@ -525,7 +525,12 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
                   height: 20, 
                   child: CircularProgressIndicator(strokeWidth: 2)
                 )
-              // AI Assist button removed as requested
+              else
+                IconButton(
+                  onPressed: generateAIDraft,
+                  icon: const Icon(Icons.auto_awesome, color: Colors.purple),
+                  tooltip: "Generate AI Draft",
+                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -749,7 +754,7 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
               if (accountType == 'farmer' || isAdmin) buildWeatherSection(),
               const SizedBox(height: 20),
               if (isAdmin) buildAdminSenderSection(),
-              if (!isAdmin) buildBulletinBoard(),
+              buildBulletinBoard(),
               const SizedBox(height: 28),
             ],
           ),

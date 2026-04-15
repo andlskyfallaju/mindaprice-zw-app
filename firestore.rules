@@ -65,7 +65,10 @@ service cloud.firestore {
     // --- RATINGS ---
     match /ratings/{ratingId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.fromUid;
+      // Ensure users cannot rate themselves and can only submit as themselves
+      allow create: if isSignedIn() && 
+                   request.auth.uid == request.resource.data.fromUid &&
+                   request.auth.uid != request.resource.data.toUid;
       allow update, delete: if isAdmin();
     }
 
@@ -78,7 +81,13 @@ service cloud.firestore {
     // --- ACTIVE REGIONS (Background tracking) ---
     match /active_regions/{topicId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (isSignedIn() && request.auth.uid != null);
+      // Validate structure to prevent junk data
+      allow write: if isAdmin() || (
+        isSignedIn() && 
+        request.resource.data.keys().hasAll(['topic', 'lat', 'lon', 'name', 'lastUpdated']) &&
+        request.resource.data.lat is number &&
+        request.resource.data.lon is number
+      );
     }
 
     // --- CONFIG (Version checks etc) ---
@@ -100,6 +109,13 @@ service cloud.firestore {
     match /market_prices/{priceId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
+    }
+
+    // --- MARKETPLACE PRODUCTS (P2P Market) ---
+    match /products/{productId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (isOwner(resource.data.sellerId) || isAdmin());
     }
   }
 }

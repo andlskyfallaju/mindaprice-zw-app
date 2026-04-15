@@ -10,7 +10,8 @@ import '../widgets/app_gradient.dart';
 import '../services/wallpaper_service.dart';
 import '../widgets/chat_wallpaper_picker.dart';
 import '../widgets/chat_bubble.dart';
-import 'dart:io';
+import 'dart:io' as io;
+import 'package:flutter/foundation.dart';
 
 class AiAdvisorScreen extends StatefulWidget {
   const AiAdvisorScreen({super.key});
@@ -29,7 +30,7 @@ class _AiAdvisorScreenState extends State<AiAdvisorScreen> {
   double? lat;
   double? lon;
   String? preferredLanguage;
-  File? _selectedImage;
+  XFile? _selectedImage;
 
   WallpaperType _wallpaperType = WallpaperType.none;
   dynamic _wallpaperValue;
@@ -72,7 +73,7 @@ class _AiAdvisorScreenState extends State<AiAdvisorScreen> {
     }
   }
 
-  Future<void> _sendMessage({File? imageFile}) async {
+  Future<void> _sendMessage({XFile? imageFile}) async {
     final text = _messageController.text.trim();
     if ((text.isEmpty && imageFile == null) || _isThinking) return;
 
@@ -230,9 +231,17 @@ class _AiAdvisorScreenState extends State<AiAdvisorScreen> {
     if (_wallpaperType == WallpaperType.color) {
       return BoxDecoration(color: _wallpaperValue as Color);
     } else if (_wallpaperType == WallpaperType.image) {
+      if (kIsWeb) {
+        return BoxDecoration(
+          image: DecorationImage(
+            image: NetworkImage((_wallpaperValue as io.File).path),
+            fit: BoxFit.cover,
+          ),
+        );
+      }
       return BoxDecoration(
         image: DecorationImage(
-          image: FileImage(_wallpaperValue as File),
+          image: FileImage(_wallpaperValue as io.File),
           fit: BoxFit.cover,
         ),
       );
@@ -465,7 +474,7 @@ class _AiAdvisorScreenState extends State<AiAdvisorScreen> {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (picked != null && mounted) {
-      setState(() => _selectedImage = File(picked.path));
+      setState(() => _selectedImage = picked);
     }
   }
 
@@ -483,12 +492,9 @@ class _AiAdvisorScreenState extends State<AiAdvisorScreen> {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    _selectedImage!,
-                    height: 80,
-                    width: 80,
-                    fit: BoxFit.cover,
-                  ),
+                  child: kIsWeb
+                    ? Image.network(_selectedImage!.path, height: 80, width: 80, fit: BoxFit.cover)
+                    : Image.file(io.File(_selectedImage!.path), height: 80, width: 80, fit: BoxFit.cover),
                 ),
                 const SizedBox(width: 8),
                 Column(

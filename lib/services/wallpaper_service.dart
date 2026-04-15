@@ -1,7 +1,8 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io' as io;
 
 enum WallpaperType { none, color, image }
 
@@ -20,13 +21,16 @@ class WallpaperService {
   }
 
   /// Copies an image to the app container and saves its path as the chat wallpaper.
-  static Future<void> setWallpaperImage(File imageFile, {String? chatId}) async {
+  static Future<void> setWallpaperImage(dynamic imageFile, {String? chatId}) async {
+    if (kIsWeb) return; // Local file persistence not supported on web in this implementation
+    
     final prefs = await SharedPreferences.getInstance();
     
     // Save image to app docs directory for persistence
     final appDir = await getApplicationDocumentsDirectory();
     final fileName = 'chat_wallpaper_${chatId ?? "global"}_${DateTime.now().millisecondsSinceEpoch}.png';
-    final savedImage = await imageFile.copy('${appDir.path}/$fileName');
+    // Cast to io.File since we know we're not on web
+    final savedImage = await (imageFile as io.File).copy('${appDir.path}/$fileName');
 
     await prefs.setString(_getTypeKey(chatId), 'image');
     await prefs.setString(_getValueKey(chatId), savedImage.path);
@@ -59,9 +63,11 @@ class WallpaperService {
         'value': Color(prefs.getInt(finalValueKey) ?? 0xFFE5DDD5),
       };
     } else if (typeStr == 'image') {
+      if (kIsWeb) return {'type': WallpaperType.none, 'value': null};
+      
       final imagePath = prefs.getString(finalValueKey);
       if (imagePath != null) {
-        final file = File(imagePath);
+        final file = io.File(imagePath);
         if (await file.exists()) {
           return {
             'type': WallpaperType.image,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/app_background.dart';
 import '../widgets/app_gradient.dart';
@@ -120,13 +121,23 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> signInWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      await GoogleSignIn.instance.initialize();
-      final GoogleSignInAccount googleUser = await GoogleSignIn.instance.authenticate();
+      GoogleSignInAccount? googleUser;
+      
+      if (kIsWeb) {
+        googleUser = await GoogleSignIn.instance.authenticate();
+      } else {
+        googleUser = await GoogleSignIn.instance.authenticate();
+      }
+
+      if (googleUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+      
       final GoogleSignInAuthentication googleAuth = googleUser.authentication;
       final AuthCredential credential = GoogleAuthProvider.credential(
         idToken: googleAuth.idToken,
       );
-
       final UserCredential userCred = await _auth.signInWithCredential(credential);
       final User? user = userCred.user;
       if (user == null) throw Exception("Failed to sign in with Google.");
@@ -197,7 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       
       if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home');
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
 
     } on FirebaseAuthException catch (e) {
       if (mounted) {

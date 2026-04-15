@@ -1,5 +1,6 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
@@ -8,6 +9,8 @@ class NotificationService {
   static Future<void> init({
     void Function(String? payload)? onNotificationTap,
   }) async {
+    if (kIsWeb) return; // Local notifications not supported on web via this plugin
+
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
 
     const initSettings = InitializationSettings(
@@ -23,19 +26,21 @@ class NotificationService {
       },
     );
 
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'advisory_channel',
-      'Advisory Notifications',
-      description: 'Notifications for farming advisory alerts and chat messages',
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-    );
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      const AndroidNotificationChannel channel = AndroidNotificationChannel(
+        'advisory_channel',
+        'Advisory Notifications',
+        description: 'Notifications for farming advisory alerts and chat messages',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      );
 
-    await _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+      await _notificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+    }
   }
 
   static Future<void> showNotification({
@@ -44,6 +49,8 @@ class NotificationService {
     required String notificationType, // 'advisory' or 'messenger'
     String? payload,
   }) async {
+    if (kIsWeb) return; // Skip showing local UI notifications on web
+
     final prefs = await SharedPreferences.getInstance();
     
     // Check if notifications are enabled for this type

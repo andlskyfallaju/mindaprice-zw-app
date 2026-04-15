@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
@@ -16,9 +17,11 @@ import 'services/notification_service.dart';
 import 'services/theme_service.dart';
 import 'screens/profile_screen.dart';
 import 'screens/notification_settings_screen.dart';
+import 'screens/pricing_admin_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'services/cache_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -38,8 +41,8 @@ void handleNotificationPayload(Map data) {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
     if (senderId != null && senderId != currentUid && navigatorKey.currentState != null) {
-      // Clear stack and jump to Messenger tab, then push the specific chat
-      navigatorKey.currentState!.pushNamedAndRemoveUntil('/home', (route) => false, arguments: 1);
+      // Clear stack and jump to Messenger tab (index 2), then push the specific chat
+      navigatorKey.currentState!.pushNamedAndRemoveUntil('/home', (route) => false, arguments: 2);
       
       navigatorKey.currentState!.push(
         MaterialPageRoute(
@@ -83,36 +86,46 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await NotificationService.init(
-    onNotificationTap: handleNotificationTapPayload,
-  );
+  if (!kIsWeb) {
+    // Initialize Google Sign-In once at startup for mobile
+    await GoogleSignIn.instance.initialize();
+
+    await NotificationService.init(
+      onNotificationTap: handleNotificationTapPayload,
+    );
+  }
 
   await ThemeService.init();
 
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    final payload = jsonEncode(message.data);
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      final payload = jsonEncode(message.data);
 
-    final dynamic type = message.data['type'];
-    final String notificationType = (type == 'chat' || type == 'messenger') ? 'messenger' : 'advisory';
+      final dynamic type = message.data['type'];
+      final String notificationType = (type == 'chat' || type == 'messenger') ? 'messenger' : 'advisory';
 
-    NotificationService.showNotification(
-      title: message.notification?.title ?? 'Notification',
-      body: message.notification?.body ?? '',
-      notificationType: notificationType,
-      payload: payload,
+      NotificationService.showNotification(
+        title: message.notification?.title ?? 'Notification',
+        body: message.notification?.body ?? '',
+        notificationType: notificationType,
+        payload: payload,
+      );
+    });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      handleNotificationPayload(message.data);
+    });
+  }
+
+  RemoteMessage? initialMessage;
+  if (!kIsWeb) {
+    initialMessage = await FirebaseMessaging.instance.getInitialMessage().timeout(
+      const Duration(seconds: 3),
+      onTimeout: () => null,
     );
-  });
-
-  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    handleNotificationPayload(message.data);
-  });
-
-  final initialMessage = await FirebaseMessaging.instance.getInitialMessage().timeout(
-    const Duration(seconds: 3),
-    onTimeout: () => null,
-  );
+  }
 
   runApp(MindaPriceApp(initialMessage: initialMessage));
 }
@@ -221,6 +234,7 @@ class _MindaPriceAppState extends State<MindaPriceApp> {
             '/settings': (context) => const SettingsScreen(),
             '/profile': (context) => const ProfileScreen(),
             '/notification-settings': (context) => const NotificationSettingsScreen(),
+            '/pricing-admin': (context) => const PricingAdminScreen(),
           },
         );
       },
